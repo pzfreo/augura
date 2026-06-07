@@ -9,6 +9,7 @@ from __future__ import annotations
 from augura.analyze import analyze
 from augura.bed_fit import find_bed_fit
 from augura.brim import find_brim_risk
+from augura.estampo import to_estampo_toml
 from augura.manifold import find_manifold_issues, is_watertight
 from augura.orientation import OrientationScore, orientation_scores
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
@@ -29,4 +30,5 @@ __all__ = [
     "find_tip_over",
     "is_watertight",
     "orientation_scores",
+    "to_estampo_toml",
 ]
