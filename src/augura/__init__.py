@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from augura.analyze import analyze
 from augura.bed_fit import find_bed_fit
+from augura.brim import find_brim_risk
 from augura.manifold import find_manifold_issues, is_watertight
 from augura.orientation import OrientationScore, orientation_scores
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
@@ -22,6 +23,7 @@ __all__ = [
     "Severity",
     "analyze",
     "find_bed_fit",
+    "find_brim_risk",
     "find_manifold_issues",
     "find_overhangs",
     "find_tip_over",

@@ -60,3 +60,8 @@ class Report:
     def tip_over(self) -> tuple[Finding, ...]:
         """Findings flagging that the part is statically unstable (will topple)."""
         return self.of_kind("tip_over")
+
+    @property
+    def brim(self) -> tuple[Finding, ...]:
+        """Findings recommending a brim/raft (lift/peel risk)."""
+        return self.of_kind("brim")
