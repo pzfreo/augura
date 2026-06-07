@@ -17,6 +17,7 @@ from augura.manifold import find_manifold_issues
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Report
 from augura.tip_over import find_tip_over
+from augura.wall_thickness import find_thin_walls
 
 
 def analyze(
@@ -27,8 +28,8 @@ def analyze(
 ) -> Report:
     """Analyse a solid and return its printability report.
 
-    Overhang, manifold, tip-over, and brim checks always run; the bed-fit check
-    runs only when ``build_volume`` is supplied.
+    Overhang, manifold, tip-over, brim, and wall-thickness checks always run; the
+    bed-fit check runs only when ``build_volume`` is supplied.
 
     Args:
         shape: The part to analyse, oriented for printing (+Z up, resting on
@@ -42,6 +43,7 @@ def analyze(
     findings += find_manifold_issues(shape)
     findings += find_tip_over(shape)
     findings += find_brim_risk(shape)
+    findings += find_thin_walls(shape)
     if build_volume is not None:
         findings += find_bed_fit(shape, build_volume)
     return Report(findings=tuple(findings))

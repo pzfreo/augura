@@ -65,3 +65,8 @@ class Report:
     def brim(self) -> tuple[Finding, ...]:
         """Findings recommending a brim/raft (lift/peel risk)."""
         return self.of_kind("brim")
+
+    @property
+    def thin_walls(self) -> tuple[Finding, ...]:
+        """Findings flagging walls too thin to print at the given nozzle."""
+        return self.of_kind("thin_wall")
