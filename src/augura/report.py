@@ -65,3 +65,8 @@ class Report:
     def brim(self) -> tuple[Finding, ...]:
         """Findings recommending a brim/raft (lift/peel risk)."""
         return self.of_kind("brim")
+
+    @property
+    def min_feature(self) -> tuple[Finding, ...]:
+        """Findings flagging a thin vertical feature that caps the layer height."""
+        return self.of_kind("min_feature")
