@@ -74,6 +74,8 @@ def find_manifold_issues_mesh(mesh: Any) -> list[Finding]:
 
 def analyze_mesh(mesh: Any, *, support_angle: float = DEFAULT_SUPPORT_ANGLE) -> Report:
     """Degraded, approximate analysis of a tessellated mesh."""
+    if mesh.bounds is None:  # empty / degenerate mesh: nothing to analyse
+        return Report()
     findings = find_overhangs_mesh(mesh, support_angle=support_angle)
     findings += find_manifold_issues_mesh(mesh)
     return Report(findings=tuple(findings))

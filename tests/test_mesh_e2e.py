@@ -41,3 +41,25 @@ def test_mesh_overhang_is_reported_and_marked_approximate() -> None:
     overhangs = analyze(_mesh(cantilever)).overhangs
     assert overhangs
     assert all("approximate" in f.message for f in overhangs)
+
+
+def test_empty_mesh_yields_empty_report() -> None:
+    # A failed/empty STL load (no faces) must not crash; it has nothing to report.
+    assert analyze(trimesh.Trimesh()).findings == ()
+
+
+def test_native_trimesh_box_has_no_overhangs() -> None:
+    # A box from a non-build123d source (outward-wound normals): its bottom is
+    # bed-contact, its top points up, its sides are vertical -> no overhangs.
+    box = trimesh.creation.box(extents=(20, 20, 10))
+    assert analyze(box).overhangs == ()
+
+
+def test_sphere_mesh_flags_only_shallow_overhangs() -> None:
+    # A sphere's lower hemisphere spans every angle: shallow downward faces are
+    # flagged, steep (self-supporting) ones are not -- so an overhang is reported
+    # but it does not cover the whole lower half.
+    sphere = trimesh.creation.icosphere(radius=10)
+    overhangs = analyze(sphere).overhangs
+    assert overhangs
+    assert all("approximate" in f.message for f in overhangs)
