@@ -70,3 +70,8 @@ class Report:
     def min_feature(self) -> tuple[Finding, ...]:
         """Findings flagging a thin vertical feature that caps the layer height."""
         return self.of_kind("min_feature")
+
+    @property
+    def thin_walls(self) -> tuple[Finding, ...]:
+        """Findings flagging walls too thin to print at the given nozzle."""
+        return self.of_kind("thin_wall")
