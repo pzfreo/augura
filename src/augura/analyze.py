@@ -11,11 +11,17 @@ from typing import Any
 
 from build123d import Shape
 
+from augura.bed_fit import find_bed_fit
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Report
 
 
-def analyze(shape: Shape[Any], *, support_angle: float = DEFAULT_SUPPORT_ANGLE) -> Report:
+def analyze(
+    shape: Shape[Any],
+    *,
+    support_angle: float = DEFAULT_SUPPORT_ANGLE,
+    build_volume: tuple[float, float, float] | None = None,
+) -> Report:
     """Analyse a solid and return its printability report.
 
     Args:
@@ -23,6 +29,10 @@ def analyze(shape: Shape[Any], *, support_angle: float = DEFAULT_SUPPORT_ANGLE) 
             the build plate at its minimum Z).
         support_angle: Faces shallower than this many degrees from horizontal
             are flagged as overhangs.
+        build_volume: Optional usable build volume ``(x, y, z)`` in mm; when
+            given, the part is checked against it for bed-fit.
     """
     findings = find_overhangs(shape, support_angle=support_angle)
+    if build_volume is not None:
+        findings += find_bed_fit(shape, build_volume)
     return Report(findings=tuple(findings))
