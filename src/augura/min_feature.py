@@ -20,25 +20,38 @@ from augura.report import Finding, Severity
 
 # A face is horizontal when its normal is within this of +/-Z.
 _PLANAR_TOL = 1e-6
+# Face planes closer than this (mm) are treated as one level: sub-resolution
+# numerical noise (boolean artefacts, parametric round-off) is not a real step.
+_LEVEL_TOL = 1e-3
 # Below this smallest-feature size, flag the layer-height bound (tunable).
 DEFAULT_MIN_FEATURE = 0.5
+
+
+def _distinct_levels(values: list[float]) -> list[float]:
+    """Sorted Z-levels with planes within ``_LEVEL_TOL`` merged into one."""
+    reps: list[float] = []
+    for z in sorted(values):
+        if not reps or z - reps[-1] > _LEVEL_TOL:
+            reps.append(z)
+    return reps
 
 
 def min_vertical_feature(shape: Shape[Any]) -> float | None:
     """Return the smallest gap between horizontal face planes, or None.
 
     None when the shape has fewer than two distinct horizontal face levels (no
-    measurable vertical step).
+    measurable vertical step). Planes within ``_LEVEL_TOL`` mm are merged, so
+    sub-resolution numerical noise is never reported as a feature.
     """
-    levels = []
-    for face in shape.faces():
-        normal = face.normal_at(face.center())
-        if abs(abs(normal.Z) - 1.0) < _PLANAR_TOL:
-            levels.append(face.center().Z)
-    unique = sorted({round(z, 6) for z in levels})
-    if len(unique) < 2:
+    levels = [
+        face.center().Z
+        for face in shape.faces()
+        if abs(abs(face.normal_at(face.center()).Z) - 1.0) < _PLANAR_TOL
+    ]
+    reps = _distinct_levels(levels)
+    if len(reps) < 2:
         return None
-    return min(b - a for a, b in zip(unique, unique[1:], strict=False))
+    return min(b - a for a, b in zip(reps, reps[1:], strict=False))
 
 
 def find_thin_features(
@@ -53,8 +66,8 @@ def find_thin_features(
             kind="min_feature",
             severity=Severity.WARNING,
             message=(
-                f"Smallest vertical feature {feature:.2f} mm caps the layer height "
-                f"(use <= {feature:.2f} mm)"
+                f"Smallest vertical feature {feature:.3g} mm caps the layer height "
+                f"(use <= {feature:.3g} mm)"
             ),
         )
     ]
