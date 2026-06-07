@@ -11,6 +11,7 @@ from augura.bed_fit import find_bed_fit
 from augura.manifold import find_manifold_issues, is_watertight
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Finding, Report, Severity
+from augura.tip_over import find_tip_over
 
 __all__ = [
     "DEFAULT_SUPPORT_ANGLE",
@@ -21,5 +22,6 @@ __all__ = [
     "find_bed_fit",
     "find_manifold_issues",
     "find_overhangs",
+    "find_tip_over",
     "is_watertight",
 ]
