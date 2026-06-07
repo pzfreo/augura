@@ -67,7 +67,11 @@ def _inside_hull(point: Point, hull: list[Point]) -> bool:
 
 
 def find_tip_over(shape: Shape[Any]) -> list[Finding]:
-    """Return a finding if the part's COM falls outside its support polygon."""
+    """Return a finding if the part's COM falls outside its support polygon.
+
+    Only flat faces lying in the bed plane contribute to the support polygon;
+    parts that rest on tilted faces, edges, or points abstain (no finding).
+    """
     z_min = shape.bounding_box().min.Z
     hull = _convex_hull(_bed_contact_points(shape, z_min))
     if len(hull) < 3:
