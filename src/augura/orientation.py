@@ -47,7 +47,8 @@ def orientation_scores(
 
     Each candidate is an ``(X, Y, Z)`` Euler rotation in degrees; the rotated
     part is dropped onto the bed before its overhangs are measured. Ties keep the
-    candidate input order.
+    candidate input order; secondary tie-breaking by footprint or height is
+    deferred (it needs a defined preference direction).
     """
     rotations = _AXIS_ORIENTATIONS if candidates is None else candidates
     scores: list[OrientationScore] = []
