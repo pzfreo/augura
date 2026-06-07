@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "augura"
+version = "0.1.0.dev0"
+description = "BREP-exact 3D-printability analysis and print-advice for build123d / FDM"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "Paul Fremantle", email = "pzfreo@gmail.com" }]
+keywords = ["3d-printing", "fdm", "build123d", "cad", "printability", "slicing"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    # build123d is the core BREP path. Pre-1.0; soft-pin to the tested major+minor.
+    "build123d>=0.10,<0.11",
+]
+
+[project.urls]
+Homepage = "https://github.com/pzfreo/augura"
+Repository = "https://github.com/pzfreo/augura"
+Issues = "https://github.com/pzfreo/augura/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/augura"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov>=7.1.0",
+    "mypy",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+
+[tool.mypy]
+files = ["src", "tests"]
+python_version = "3.11"
+strict = true
+# build123d ships no type stubs; treat it as untyped rather than erroring.
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--strict-markers --cov=augura --cov-report=term-missing --cov-fail-under=90"
+
+[tool.coverage.run]
+source = ["augura"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
