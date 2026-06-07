@@ -19,14 +19,22 @@ _FIT_TOL = 1e-6
 def find_bed_fit(shape: Shape[Any], build_volume: tuple[float, float, float]) -> list[Finding]:
     """Return a single ``bed_fit`` finding if the part overflows the build volume.
 
+    Compares the bounding-box *extent* per axis; the part's absolute position is
+    irrelevant because the slicer places it on the plate. This answers "is the
+    part too big for the volume?", not "is it currently sitting inside those
+    coordinates?".
+
     Args:
         shape: the part, oriented as it will be printed.
         build_volume: usable build volume as ``(x, y, z)`` in mm.
     """
     size = shape.bounding_box().size
-    actual = {"X": size.X, "Y": size.Y, "Z": size.Z}
-    limit = {"X": build_volume[0], "Y": build_volume[1], "Z": build_volume[2]}
-    over = [axis for axis in ("X", "Y", "Z") if actual[axis] > limit[axis] + _FIT_TOL]
+    extents = (size.X, size.Y, size.Z)
+    over = [
+        axis
+        for axis, extent, limit in zip("XYZ", extents, build_volume, strict=True)
+        if extent > limit + _FIT_TOL
+    ]
     if not over:
         return []
     msg = (
