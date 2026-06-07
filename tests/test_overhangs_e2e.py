@@ -9,13 +9,15 @@ from __future__ import annotations
 import pytest
 
 from augura import analyze
-from tests.fixtures import ALL, CANTILEVER, FLAT_PLATE, PartFixture
+from tests.fixtures import CANTILEVER, FLAT_PLATE
 
 
-@pytest.mark.parametrize("fx", ALL, ids=lambda fx: fx.name)
-def test_overhang_count_matches_expectation(fx: PartFixture) -> None:
-    report = analyze(fx.build())
-    assert len(report.overhangs) == fx.expected_overhangs, fx.notes
+def test_cantilever_has_one_overhang() -> None:
+    assert len(analyze(CANTILEVER.build()).overhangs) == 1
+
+
+def test_flat_plate_has_no_overhangs() -> None:
+    assert len(analyze(FLAT_PLATE.build()).overhangs) == 0
 
 
 def test_cantilever_overhang_is_the_arm_underside() -> None:
