@@ -15,4 +15,6 @@ from tests.fixtures import ALL, PartFixture
 def test_fixture_builds_to_valid_solid(fx: PartFixture) -> None:
     part = fx.build()
     assert part.volume > 0.0
-    assert len(part.solids()) >= 1
+    # Exactly one solid: a fixture that accidentally builds disjoint pieces
+    # (e.g. parts that don't touch) is an invalid printability fixture.
+    assert len(part.solids()) == 1
