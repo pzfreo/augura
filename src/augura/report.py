@@ -55,3 +55,8 @@ class Report:
     def manifold_issues(self) -> tuple[Finding, ...]:
         """Findings flagging that the shape is not watertight/manifold."""
         return self.of_kind("not_manifold")
+
+    @property
+    def tip_over(self) -> tuple[Finding, ...]:
+        """Findings flagging that the part is statically unstable (will topple)."""
+        return self.of_kind("tip_over")
