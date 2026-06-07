@@ -68,10 +68,10 @@ def _flat_plate() -> Shape[Any]:
 # orientation search
 # --------------------------------------------------------------------------- #
 def _angle_bracket() -> Shape[Any]:
-    """An L of two thick plates: one flat on the bed, one standing vertical.
+    """An L of two thick plates: a base flat on the bed with one leg standing up.
 
-    Orientation-sensitive: as modelled the upright leg's geometry differs in
-    support cost from a pose that lays both legs in-plane.
+    Orientation-sensitive: as modelled it rests flat and prints support-free,
+    while standing it on an end turns a leg into an unsupported cantilever.
     """
     base = Pos(0, 0, 2.5) * Box(60, 30, 5)
     leg = Pos(-27.5, 0, 25) * Box(5, 30, 40)
@@ -90,14 +90,16 @@ def _oversized_plate() -> Shape[Any]:
 # tip-over / stability
 # --------------------------------------------------------------------------- #
 def _tipping_mast() -> Shape[Any]:
-    """A small foot with a tall mast cantilevered far to one side.
+    """A small bed foot, a bridging arm, and a tall mast on the arm's far end.
 
-    The combined centre of mass projects well outside the foot's footprint, so
-    the part is statically unstable and will topple without support/bracing.
+    A single connected solid whose combined centre of mass projects well outside
+    the foot's bed-contact footprint, so it is statically unstable and will
+    topple without bracing.
     """
     foot = Pos(0, 0, 2) * Box(20, 20, 4)
-    mast = Pos(40, 0, 54) * Box(10, 10, 100)
-    return cast(Shape[Any], foot + mast)
+    arm = Pos(20, 0, 6) * Box(60, 10, 4)
+    mast = Pos(45, 0, 48) * Box(10, 10, 80)
+    return cast(Shape[Any], foot + arm + mast)
 
 
 # --------------------------------------------------------------------------- #
@@ -119,9 +121,9 @@ def _thin_lamina_block() -> Shape[Any]:
 # --------------------------------------------------------------------------- #
 def _thin_wall_tube() -> Shape[Any]:
     """A tube with a 0.3 mm wall — thinner than two 0.4 mm nozzle widths."""
-    outer = Cylinder(radius=10, height=20)
-    inner = Cylinder(radius=9.7, height=20)
-    return outer - inner
+    outer = Pos(0, 0, 10) * Cylinder(radius=10, height=20)
+    inner = Pos(0, 0, 10) * Cylinder(radius=9.7, height=20)
+    return cast(Shape[Any], outer - inner)
 
 
 # --------------------------------------------------------------------------- #
@@ -141,7 +143,7 @@ def _solid_cube() -> Shape[Any]:
 # --------------------------------------------------------------------------- #
 def _tall_thin_pin() -> Shape[Any]:
     """A tall, slender pin: tiny bed-contact footprint relative to its height."""
-    return Cylinder(radius=3, height=80)
+    return Pos(0, 0, 40) * Cylinder(radius=3, height=80)
 
 
 # --------------------------------------------------------------------------- #
@@ -174,8 +176,8 @@ ANGLE_BRACKET = PartFixture(
     name="angle_bracket",
     build=_angle_bracket,
     capability="orientation_search",
-    expects="orientation search ranks a both-legs-flat pose above the as-modelled upright "
-    "pose by total unsupported overhang area",
+    expects="orientation search ranks the support-free flat pose (as modelled) above poses "
+    "that stand it on an end and cantilever a leg",
 )
 OVERSIZED_PLATE = PartFixture(
     name="oversized_plate",
