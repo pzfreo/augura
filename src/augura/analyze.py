@@ -25,6 +25,9 @@ def analyze(
 ) -> Report:
     """Analyse a solid and return its printability report.
 
+    Overhang and manifold checks always run; the bed-fit check runs only when
+    ``build_volume`` is supplied.
+
     Args:
         shape: The part to analyse, oriented for printing (+Z up, resting on
             the build plate at its minimum Z).
