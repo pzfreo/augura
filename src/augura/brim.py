@@ -39,7 +39,12 @@ def find_brim_risk(
     min_footprint_area: float = DEFAULT_MIN_FOOTPRINT_AREA,
     max_aspect: float = DEFAULT_MAX_ASPECT,
 ) -> list[Finding]:
-    """Return a brim recommendation if the part risks lifting off the bed."""
+    """Return a brim recommendation if the part risks lifting off the bed.
+
+    Uses the total planar bed-contact area (its spatial spread is the tip-over
+    check's concern) and a height/sqrt(area) slenderness proxy. Abstains when
+    there is no planar footprint to measure (e.g. line contact).
+    """
     bbox = shape.bounding_box()
     footprint = _footprint_area(shape, bbox.min.Z)
     if footprint <= 0.0:
