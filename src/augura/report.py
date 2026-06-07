@@ -50,3 +50,8 @@ class Report:
     def bed_fit(self) -> tuple[Finding, ...]:
         """Findings flagging that the part overflows the build volume."""
         return self.of_kind("bed_fit")
+
+    @property
+    def manifold_issues(self) -> tuple[Finding, ...]:
+        """Findings flagging that the shape is not watertight/manifold."""
+        return self.of_kind("not_manifold")

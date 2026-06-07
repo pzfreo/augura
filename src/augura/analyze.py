@@ -12,6 +12,7 @@ from typing import Any
 from build123d import Shape
 
 from augura.bed_fit import find_bed_fit
+from augura.manifold import find_manifold_issues
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Report
 
@@ -33,6 +34,7 @@ def analyze(
             given, the part is checked against it for bed-fit.
     """
     findings = find_overhangs(shape, support_angle=support_angle)
+    findings += find_manifold_issues(shape)
     if build_volume is not None:
         findings += find_bed_fit(shape, build_volume)
     return Report(findings=tuple(findings))
