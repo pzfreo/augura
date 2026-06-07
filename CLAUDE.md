@@ -54,9 +54,13 @@ boundaries that keep the ecosystem loosely coupled.
   clear description, then **stop** and wait for review. Creating a PR and merging
   it are separate, separately-consented steps. Never auto-merge.
 - **Run the test suite before every push.**
-- **Releasing (once packaged):** cut releases via `gh release create vX.Y.Z
-  --generate-notes`; let the publish workflow handle PyPI and the version bump.
-  Never edit the version in `pyproject.toml` by hand and never push tags manually.
+- **Releasing:** cut releases with `gh release create vX.Y.Z --generate-notes`.
+  The `Publish` workflow (`.github/workflows/publish.yml`) then builds, publishes
+  to PyPI via Trusted Publishing, and auto-bumps `pyproject.toml` to the next
+  `.dev0`. Pushes to `main` publish a `.devN` build to TestPyPI. **Never edit the
+  version in `pyproject.toml` by hand and never push tags manually.** Make sure
+  `CHANGELOG.md`'s top entry matches the version you're about to release (strip
+  the `.dev0` suffix: `pyproject = 0.1.1.dev0` means you're cutting `v0.1.1`).
 
 ## Ecosystem
 
