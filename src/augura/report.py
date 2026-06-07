@@ -45,3 +45,8 @@ class Report:
     def overhangs(self) -> tuple[Finding, ...]:
         """Findings flagging downward faces that will need support."""
         return self.of_kind("overhang")
+
+    @property
+    def bed_fit(self) -> tuple[Finding, ...]:
+        """Findings flagging that the part overflows the build volume."""
+        return self.of_kind("bed_fit")

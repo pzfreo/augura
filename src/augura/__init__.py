@@ -7,6 +7,7 @@ package fixture-by-fixture behind this façade.
 from __future__ import annotations
 
 from augura.analyze import analyze
+from augura.bed_fit import find_bed_fit
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Finding, Report, Severity
 
@@ -16,5 +17,6 @@ __all__ = [
     "Report",
     "Severity",
     "analyze",
+    "find_bed_fit",
     "find_overhangs",
 ]
