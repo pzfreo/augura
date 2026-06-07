@@ -14,6 +14,7 @@ from build123d import Shape
 from augura.bed_fit import find_bed_fit
 from augura.brim import find_brim_risk
 from augura.manifold import find_manifold_issues
+from augura.mesh import analyze_mesh, is_mesh
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Report
 from augura.tip_over import find_tip_over
@@ -37,7 +38,12 @@ def analyze(
             are flagged as overhangs.
         build_volume: Optional usable build volume ``(x, y, z)`` in mm; when
             given, the part is checked against it for bed-fit.
+
+    A tessellated mesh (trimesh) is accepted too and routed to the degraded,
+    approximate mesh path; the exact BREP path is used for build123d shapes.
     """
+    if is_mesh(shape):
+        return analyze_mesh(shape, support_angle=support_angle)
     findings = find_overhangs(shape, support_angle=support_angle)
     findings += find_manifold_issues(shape)
     findings += find_tip_over(shape)
