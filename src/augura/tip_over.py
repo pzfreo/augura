@@ -11,24 +11,13 @@ from typing import Any
 
 from build123d import CenterOf, Shape
 
+from augura.footprint import bed_contact_faces
 from augura.report import Finding, Severity
 
 Point = tuple[float, float]
 
-# A face lies on the bed when it sits within this many mm of the lowest point.
-_BED_TOL = 1e-3
 # Cross-product slack so a COM exactly on the hull boundary counts as stable.
 _HULL_TOL = 1e-9
-
-
-def _bed_contact_points(shape: Shape[Any], z_min: float) -> list[Point]:
-    """Return the XY vertices of every planar face lying in the bed plane."""
-    points: list[Point] = []
-    for face in shape.faces():
-        box = face.bounding_box()
-        if abs(box.min.Z - z_min) < _BED_TOL and abs(box.max.Z - z_min) < _BED_TOL:
-            points.extend((v.X, v.Y) for v in face.vertices())
-    return points
 
 
 def _convex_hull(points: list[Point]) -> list[Point]:
@@ -72,8 +61,10 @@ def find_tip_over(shape: Shape[Any]) -> list[Finding]:
     Only flat faces lying in the bed plane contribute to the support polygon;
     parts that rest on tilted faces, edges, or points abstain (no finding).
     """
-    z_min = shape.bounding_box().min.Z
-    hull = _convex_hull(_bed_contact_points(shape, z_min))
+    points: list[Point] = [
+        (vertex.X, vertex.Y) for face in bed_contact_faces(shape) for vertex in face.vertices()
+    ]
+    hull = _convex_hull(points)
     if len(hull) < 3:
         return []  # no usable support polygon (e.g. line or point contact)
     com = shape.center(CenterOf.MASS)

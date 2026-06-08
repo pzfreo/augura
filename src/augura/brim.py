@@ -13,24 +13,13 @@ from typing import Any
 
 from build123d import Shape
 
+from augura.footprint import bed_contact_faces
 from augura.report import Finding, Severity
 
-# A face lies on the bed when it sits within this many mm of the lowest point.
-_BED_TOL = 1e-3
 # Defaults: below this contact area, or above this height/sqrt(area) ratio, a
 # brim is advised. Tunable per material/bed by the caller.
 DEFAULT_MIN_FOOTPRINT_AREA = 50.0
 DEFAULT_MAX_ASPECT = 6.0
-
-
-def _footprint_area(shape: Shape[Any], z_min: float) -> float:
-    """Total area of planar faces lying in the bed plane (the contact footprint)."""
-    area = 0.0
-    for face in shape.faces():
-        box = face.bounding_box()
-        if abs(box.min.Z - z_min) < _BED_TOL and abs(box.max.Z - z_min) < _BED_TOL:
-            area += face.area
-    return area
 
 
 def find_brim_risk(
@@ -46,7 +35,7 @@ def find_brim_risk(
     there is no planar footprint to measure (e.g. line contact).
     """
     bbox = shape.bounding_box()
-    footprint = _footprint_area(shape, bbox.min.Z)
+    footprint = sum(face.area for face in bed_contact_faces(shape))
     if footprint <= 0.0:
         return []  # no flat bed contact to assess
 
