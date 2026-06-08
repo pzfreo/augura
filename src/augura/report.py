@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 
 class Severity(StrEnum):
@@ -40,6 +41,21 @@ class Report:
     def of_kind(self, kind: str) -> tuple[Finding, ...]:
         """Return every finding of the given ``kind``, preserving order."""
         return tuple(f for f in self.findings if f.kind == kind)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable view of the report."""
+        return {
+            "findings": [
+                {
+                    "kind": f.kind,
+                    "severity": f.severity.value,
+                    "message": f.message,
+                    "area": f.area,
+                    "location": list(f.location) if f.location is not None else None,
+                }
+                for f in self.findings
+            ]
+        }
 
     @property
     def overhangs(self) -> tuple[Finding, ...]:
