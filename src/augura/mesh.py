@@ -2,8 +2,7 @@
 
 The analytic BREP path is primary; when only a tessellated mesh is available
 (e.g. an STL from a non-build123d source) augura runs a degraded, explicitly
-*approximate* version of the checks via trimesh. Requires the optional ``mesh``
-extra: ``pip install augura[mesh]``.
+*approximate* version of the checks via trimesh (a core dependency).
 
 Today this fallback covers the per-triangle overhang estimate and the
 watertight/manifold check (which finally unlocks the non-manifold negative case

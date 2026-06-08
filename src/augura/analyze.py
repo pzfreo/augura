@@ -19,7 +19,7 @@ from augura.min_feature import find_thin_features
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Report
 from augura.tip_over import find_tip_over
-from augura.wall_thickness import find_thin_walls
+from augura.wall_thickness import DEFAULT_MIN_PERIMETERS, DEFAULT_NOZZLE, find_thin_walls
 
 
 def analyze(
@@ -27,6 +27,8 @@ def analyze(
     *,
     support_angle: float = DEFAULT_SUPPORT_ANGLE,
     build_volume: tuple[float, float, float] | None = None,
+    nozzle: float = DEFAULT_NOZZLE,
+    min_perimeters: int = DEFAULT_MIN_PERIMETERS,
 ) -> Report:
     """Analyse a solid and return its printability report.
 
@@ -41,6 +43,8 @@ def analyze(
             are flagged as overhangs.
         build_volume: Optional usable build volume ``(x, y, z)`` in mm; when
             given, the part is checked against it for bed-fit.
+        nozzle: Nozzle diameter (mm) for the wall-thickness check.
+        min_perimeters: Walls thinner than ``min_perimeters * nozzle`` are flagged.
 
     A tessellated mesh (trimesh) is accepted too and routed to the degraded,
     approximate mesh path; the exact BREP path is used for build123d shapes.
@@ -52,7 +56,7 @@ def analyze(
     findings += find_tip_over(shape)
     findings += find_brim_risk(shape)
     findings += find_thin_features(shape)
-    findings += find_thin_walls(shape)
+    findings += find_thin_walls(shape, nozzle=nozzle, min_perimeters=min_perimeters)
     if build_volume is not None:
         findings += find_bed_fit(shape, build_volume)
     return Report(findings=tuple(findings))

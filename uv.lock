@@ -50,10 +50,6 @@ version = "0.1.1.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "build123d" },
-]
-
-[package.optional-dependencies]
-mesh = [
     { name = "trimesh" },
 ]
 
@@ -63,15 +59,13 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-    { name = "trimesh" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "build123d", specifier = ">=0.10,<0.11" },
-    { name = "trimesh", marker = "extra == 'mesh'" },
+    { name = "trimesh" },
 ]
-provides-extras = ["mesh"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -79,7 +73,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff" },
-    { name = "trimesh" },
 ]
 
 [[package]]
