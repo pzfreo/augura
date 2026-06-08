@@ -92,3 +92,13 @@ def test_unsupported_extension(tmp_path: Path, capsys: pytest.CaptureFixture[str
 def test_missing_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["analyze", str(tmp_path / "nope.step")]) == 2
     assert "no such file" in capsys.readouterr().err
+
+
+def test_corrupt_file_is_reported_not_raised(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A garbage STL must produce a clean error + exit 2, never a traceback.
+    bad = tmp_path / "garbage.stl"
+    bad.write_bytes(b"not a real stl \x00\x01\x02")
+    assert main(["analyze", str(bad)]) == 2
+    assert "augura:" in capsys.readouterr().err

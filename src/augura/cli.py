@@ -44,23 +44,27 @@ def _load(path: Path) -> Any:
     raise ValueError(f"unsupported file type '{path.suffix}' (use .step/.stp or .stl)")
 
 
+def _md_cell(text: str) -> str:
+    """Escape a string for a single Markdown table cell."""
+    return text.replace("|", r"\|").replace("\n", " ")
+
+
 def _render_report(report: Report, source: str, fmt: str) -> str:
     if fmt == "json":
         return json.dumps({"source": source, **report.to_dict()}, indent=2)
     if fmt == "md":
-        lines = [f"# augura report — `{source}`", ""]
+        lines = [f"# augura report - `{source}`", ""]
         if not report.findings:
             return "\n".join([*lines, "No printability issues found."]) + "\n"
         lines += ["| Severity | Check | Detail |", "| --- | --- | --- |"]
         lines += [
-            f"| {f.severity.value} | {f.kind} | {f.message.replace('|', chr(92) + '|')} |"
-            for f in report.findings
+            f"| {f.severity.value} | {f.kind} | {_md_cell(f.message)} |" for f in report.findings
         ]
         return "\n".join([*lines, ""]) + "\n"
     # text
     if not report.findings:
-        return f"augura — {source}\n  No printability issues found."
-    lines = [f"augura — {source}"]
+        return f"augura - {source}\n  No printability issues found."
+    lines = [f"augura - {source}"]
     lines += [f"  [{f.severity.value.upper()}] {f.kind}: {f.message}" for f in report.findings]
     errors = sum(1 for f in report.findings if f.severity is Severity.ERROR)
     warnings = sum(1 for f in report.findings if f.severity is Severity.WARNING)
@@ -79,9 +83,9 @@ def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) 
         return json.dumps(payload, indent=2)
     if fmt == "md":
         lines = [
-            f"# augura orientations — `{source}`",
+            f"# augura orientations - `{source}`",
             "",
-            "| Rank | Rotation (deg) | Overhang area (mm²) |",
+            "| Rank | Rotation (deg) | Overhang area (mm2) |",
             "| --- | --- | --- |",
         ]
         lines += [
@@ -89,9 +93,9 @@ def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) 
         ]
         return "\n".join([*lines, ""]) + "\n"
     # text
-    lines = [f"augura orientations — {source} (best first)"]
+    lines = [f"augura orientations - {source} (best first)"]
     lines += [
-        f"  {i}. rotation {s.rotation} -> {s.overhang_area:.1f} mm² unsupported overhang"
+        f"  {i}. rotation {s.rotation} -> {s.overhang_area:.1f} mm2 unsupported overhang"
         for i, s in enumerate(scores, 1)
     ]
     return "\n".join(lines)
@@ -147,18 +151,21 @@ def _run_orientations(shape: Any, args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    path: Path = args.file
+    args.file = args.file.expanduser()
     try:
-        if not path.exists():
-            raise FileNotFoundError(f"no such file: {path}")
-        shape = _load(path)
-    except (OSError, ValueError) as exc:
+        if not args.file.exists():
+            raise FileNotFoundError(f"no such file: {args.file}")
+        shape = _load(args.file)
+        if is_mesh(shape) and shape.bounds is None:
+            raise ValueError(f"no readable geometry in {args.file.name}")
+        if args.command == "analyze":
+            return _run_analyze(shape, args)
+        return _run_orientations(shape, args)
+    except Exception as exc:
+        # CLI boundary: any failure reading or processing an input file becomes a
+        # clean message + exit 2, never a traceback.
         print(f"augura: {exc}", file=sys.stderr)
         return 2
-
-    if args.command == "analyze":
-        return _run_analyze(shape, args)
-    return _run_orientations(shape, args)
 
 
 if __name__ == "__main__":  # pragma: no cover
