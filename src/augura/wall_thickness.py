@@ -1,13 +1,20 @@
 """Wall-thickness check (approximate, opposed-face / ray-sampling).
 
-Estimates the minimum wall thickness by casting a ray from each face's centre
-straight into the solid and measuring the distance to the opposite surface, then
-flags walls thinner than ``min_perimeters * nozzle``.
+Estimates the minimum wall thickness by casting rays from sample points on each
+face straight into the solid and measuring the distance to the opposite surface,
+then flags walls thinner than ``min_perimeters * nozzle``.
 
-Approximate by design: it samples a single point (the centre) per face, so it
-represents reasonably uniform walls (like the tube fixture) well but can miss a
-thin spot away from a face centre. A finer sample grid or a medial-axis method
-would be more robust — see the tracking issue.
+Sampling strategy: every face is probed at its centre. For large faces (area
+exceeding ``GRID_AREA_THRESHOLD``) an additional interior grid is added using
+the face's UV parameterisation via ``face.position_at``, so thin spots away
+from the centre are not silently missed.
+
+Vertices are intentionally excluded from sampling: they are topological boundary
+points shared with adjacent faces, and rays from them can intersect those
+adjacent faces at non-trivial distances, producing false thin-wall readings.
+
+Approximate by design: curved or very large faces may still have unsampled
+regions. A medial-axis method would be fully exhaustive.
 """
 
 from __future__ import annotations
@@ -20,28 +27,60 @@ from augura.report import Finding, Severity
 
 DEFAULT_NOZZLE = 0.4
 DEFAULT_MIN_PERIMETERS = 2
-# Ignore the ray's own start point (distance ~0) when finding the far surface.
 _RAY_TOL = 1e-6
+GRID_AREA_THRESHOLD = 100.0  # mm² — faces larger than this get an interior grid
+_GRID_N = 3  # interior grid is (_GRID_N × _GRID_N) points
+
+
+def _face_sample_pairs(face: Any) -> list[tuple[Any, Any]]:
+    """Return (point, inward_normal) pairs to probe for wall thickness.
+
+    Always includes the face centre. For large faces (area exceeding
+    ``GRID_AREA_THRESHOLD``) adds a UV-space interior grid so thin spots
+    away from the centre are not silently missed.
+
+    Vertices are excluded: they are boundary points shared with adjacent faces
+    and rays from them can hit those faces at real distances, producing false
+    thin-wall readings.
+    """
+    center = face.center()
+    inward = -face.normal_at(center)
+    pairs: list[tuple[Any, Any]] = [(center, inward)]
+
+    if face.area > GRID_AREA_THRESHOLD:
+        try:
+            for i in range(1, _GRID_N + 1):
+                for j in range(1, _GRID_N + 1):
+                    gp = face.position_at(i / (_GRID_N + 1), j / (_GRID_N + 1))
+                    try:
+                        gn = -face.normal_at(gp)
+                    except Exception:
+                        gn = inward
+                    pairs.append((gp, gn))
+        except Exception:
+            pass  # fall back to centre-only for this face
+
+    return pairs
 
 
 def min_wall_thickness(shape: Shape[Any]) -> float | None:
-    """Return the smallest face-centre-to-opposite-surface distance, or None.
+    """Return the smallest sampled wall thickness, or None.
 
-    None when no face centre has a surface ahead of it (e.g. a bare 2-D face).
+    None when no sample point on any face has an opposite surface ahead of it
+    (e.g. a bare 2-D face with no solid behind it).
     """
     thinnest: float | None = None
     for face in shape.faces():
-        point = face.center()
-        inward = -face.normal_at(point)
-        forward = []
-        for hit_point, _normal in shape.find_intersection_points(Axis(point, inward)):
-            distance = (hit_point - point).dot(inward)
-            if distance > _RAY_TOL:
-                forward.append(distance)
-        if forward:
-            nearest = min(forward)
-            if thinnest is None or nearest < thinnest:
-                thinnest = nearest
+        for point, inward in _face_sample_pairs(face):
+            forward = []
+            for hit_point, _ in shape.find_intersection_points(Axis(point, inward)):
+                d = (hit_point - point).dot(inward)
+                if d > _RAY_TOL:
+                    forward.append(d)
+            if forward:
+                nearest = min(forward)
+                if thinnest is None or nearest < thinnest:
+                    thinnest = nearest
     return thinnest
 
 

@@ -67,14 +67,22 @@ def test_orientations_json(step_box: Path, capsys: pytest.CaptureFixture[str]) -
     assert main(["orientations", str(step_box), "--format", "json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["orientations"]
-    assert "rotation" in data["orientations"][0]
+    first = data["orientations"][0]
+    assert "rotation" in first
+    assert "overhang_area" in first
+    assert "z_height_mm" in first
+    assert "bed_contact_mm2" in first
 
 
 def test_orientations_text_and_md(step_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["orientations", str(step_box)]) == 0
-    assert "best first" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "best first" in out
+    assert "mm tall" in out
     assert main(["orientations", str(step_box), "--format", "md"]) == 0
-    assert "| Rank |" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "| Rank |" in out
+    assert "Z-height" in out
 
 
 def test_orientations_rejects_mesh(stl_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
