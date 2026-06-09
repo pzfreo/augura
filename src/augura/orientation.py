@@ -62,10 +62,11 @@ def orientation_scores(
         bb = oriented.bounding_box()
         z_height = float(bb.max.Z - bb.min.Z)
         oriented = Pos(0, 0, -bb.min.Z) * oriented
+        faces = list(oriented.faces())
         area = float(
-            sum((f.area or 0.0) for f in find_overhangs(oriented, support_angle=support_angle))
+            sum((f.area or 0.0) for f in find_overhangs(oriented, support_angle=support_angle, faces=faces))
         )
-        contact = float(sum(f.area for f in bed_contact_faces(oriented)))
+        contact = float(sum(f.area for f in bed_contact_faces(oriented, faces=faces)))
         scores.append(OrientationScore(
             rotation=rotation,
             overhang_area=area,

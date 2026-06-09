@@ -7,6 +7,7 @@ the brim check uses their total area.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from build123d import Face, Shape
@@ -15,12 +16,14 @@ from build123d import Face, Shape
 BED_TOL = 1e-3
 
 
-def bed_contact_faces(shape: Shape[Any]) -> list[Face]:
+def bed_contact_faces(
+    shape: Shape[Any], *, faces: Iterable[Face] | None = None
+) -> list[Face]:
     """Return the planar faces lying in the part's bed plane (its lowest Z)."""
     z_min = shape.bounding_box().min.Z
-    faces: list[Face] = []
-    for face in shape.faces():
+    result: list[Face] = []
+    for face in (faces if faces is not None else shape.faces()):
         box = face.bounding_box()
         if abs(box.min.Z - z_min) < BED_TOL and abs(box.max.Z - z_min) < BED_TOL:
-            faces.append(face)
-    return faces
+            result.append(face)
+    return result

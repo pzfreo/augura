@@ -6,7 +6,7 @@ then flags walls thinner than ``min_perimeters * nozzle``.
 
 Sampling strategy: every face is probed at its centre. For large faces (area
 exceeding ``GRID_AREA_THRESHOLD``) an additional interior grid is added using
-the face's UV parameterisation via OCC BRepAdaptor_Surface, so thin spots away
+the face's UV parameterisation via ``face.position_at``, so thin spots away
 from the centre are not silently missed.
 
 Vertices are intentionally excluded from sampling: they are topological boundary
@@ -19,10 +19,9 @@ regions. A medial-axis method would be fully exhaustive.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
-from build123d import Axis, Shape, Vector
+from build123d import Axis, Shape
 
 from augura.report import Finding, Severity
 
@@ -50,26 +49,15 @@ def _face_sample_pairs(face: Any) -> list[tuple[Any, Any]]:
 
     if face.area > GRID_AREA_THRESHOLD:
         try:
-            from OCP.BRepAdaptor import BRepAdaptor_Surface  # type: ignore[import]
-            from OCP.gp import gp_Pnt  # type: ignore[import]
-
-            adaptor = BRepAdaptor_Surface(face.wrapped)
-            u0, u1 = adaptor.FirstUParameter(), adaptor.LastUParameter()
-            v0, v1 = adaptor.FirstVParameter(), adaptor.LastVParameter()
-            if all(math.isfinite(x) for x in (u0, u1, v0, v1)):
-                for i in range(1, _GRID_N + 1):
-                    for j in range(1, _GRID_N + 1):
-                        u = u0 + (u1 - u0) * i / (_GRID_N + 1)
-                        v = v0 + (v1 - v0) * j / (_GRID_N + 1)
-                        pt = gp_Pnt()
-                        adaptor.D0(u, v, pt)
-                        gp = Vector(pt.X(), pt.Y(), pt.Z())
-                        try:
-                            gn = -face.normal_at(gp)
-                        except Exception:
-                            gn = inward
-                        pairs.append((gp, gn))
-        except Exception:  # ImportError or OCC Standard_Failure / RuntimeError
+            for i in range(1, _GRID_N + 1):
+                for j in range(1, _GRID_N + 1):
+                    gp = face.position_at(i / (_GRID_N + 1), j / (_GRID_N + 1))
+                    try:
+                        gn = -face.normal_at(gp)
+                    except Exception:
+                        gn = inward
+                    pairs.append((gp, gn))
+        except Exception:
             pass  # fall back to centre-only for this face
 
     return pairs

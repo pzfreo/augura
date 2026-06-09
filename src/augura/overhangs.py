@@ -10,6 +10,7 @@ bed-contact face and needs no support.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from typing import Any
 
 from build123d import Shape
@@ -31,17 +32,23 @@ _ANGLE_TOL = 1e-3
 
 
 def find_overhangs(
-    shape: Shape[Any], *, support_angle: float = DEFAULT_SUPPORT_ANGLE
+    shape: Shape[Any],
+    *,
+    support_angle: float = DEFAULT_SUPPORT_ANGLE,
+    faces: Iterable[Any] | None = None,
 ) -> list[Finding]:
     """Return one ``Finding`` per face that will need support to print.
 
     Assumes the part is oriented for printing with +Z up and resting at its own
     minimum Z (the build plate). Bed-contact faces are excluded.
+
+    Pass ``faces`` to avoid re-iterating ``shape.faces()`` when the caller
+    already holds the list.
     """
     z_min = shape.bounding_box().min.Z
     findings: list[Finding] = []
 
-    for face in shape.faces():
+    for face in (faces if faces is not None else shape.faces()):
         normal = face.normal_at(face.center())
         nz = normal.Z
 
