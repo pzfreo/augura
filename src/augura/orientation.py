@@ -16,7 +16,7 @@ from typing import Any
 
 from build123d import Pos, Rotation, Shape
 
-from augura.footprint import bed_contact_faces
+from augura.footprint import BED_TOL, bed_contact_faces
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 
 Rotation3 = tuple[float, float, float]
@@ -46,6 +46,7 @@ def orientation_scores(
     *,
     support_angle: float = DEFAULT_SUPPORT_ANGLE,
     candidates: list[Rotation3] | None = None,
+    bed_tol: float = BED_TOL,
 ) -> list[OrientationScore]:
     """Rank candidate orientations best-first.
 
@@ -64,9 +65,9 @@ def orientation_scores(
         oriented = Pos(0, 0, -bb.min.Z) * oriented
         faces = list(oriented.faces())
         area = float(
-            sum((f.area or 0.0) for f in find_overhangs(oriented, support_angle=support_angle, faces=faces))
+            sum((f.area or 0.0) for f in find_overhangs(oriented, support_angle=support_angle, faces=faces, bed_tol=bed_tol))
         )
-        contact = float(sum(f.area for f in bed_contact_faces(oriented, faces=faces)))
+        contact = float(sum(f.area for f in bed_contact_faces(oriented, faces=faces, bed_tol=bed_tol)))
         scores.append(OrientationScore(
             rotation=rotation,
             overhang_area=area,

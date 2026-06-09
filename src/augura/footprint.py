@@ -17,13 +17,13 @@ BED_TOL = 1e-3
 
 
 def bed_contact_faces(
-    shape: Shape[Any], *, faces: Iterable[Face] | None = None
+    shape: Shape[Any], *, faces: Iterable[Face] | None = None, bed_tol: float = BED_TOL
 ) -> list[Face]:
     """Return the planar faces lying in the part's bed plane (its lowest Z)."""
     z_min = shape.bounding_box().min.Z
     result: list[Face] = []
     for face in (faces if faces is not None else shape.faces()):
         box = face.bounding_box()
-        if abs(box.min.Z - z_min) < BED_TOL and abs(box.max.Z - z_min) < BED_TOL:
+        if abs(box.min.Z - z_min) < bed_tol and abs(box.max.Z - z_min) < bed_tol:
             result.append(face)
     return result

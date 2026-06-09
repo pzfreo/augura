@@ -36,6 +36,7 @@ def find_overhangs(
     *,
     support_angle: float = DEFAULT_SUPPORT_ANGLE,
     faces: Iterable[Any] | None = None,
+    bed_tol: float = _BED_Z_TOL,
 ) -> list[Finding]:
     """Return one ``Finding`` per face that will need support to print.
 
@@ -57,7 +58,7 @@ def find_overhangs(
             continue
 
         # A downward face flush with the build plate is bed contact, not overhang.
-        on_bed = abs(face.bounding_box().min.Z - z_min) < _BED_Z_TOL and nz < -_BED_NORMAL_TOL
+        on_bed = abs(face.bounding_box().min.Z - z_min) < bed_tol and nz < -_BED_NORMAL_TOL
         if on_bed:
             continue
 

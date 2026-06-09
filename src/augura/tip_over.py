@@ -11,7 +11,7 @@ from typing import Any
 
 from build123d import CenterOf, Shape
 
-from augura.footprint import bed_contact_faces
+from augura.footprint import BED_TOL, bed_contact_faces
 from augura.report import Finding, Severity
 
 Point = tuple[float, float]
@@ -55,14 +55,14 @@ def _inside_hull(point: Point, hull: list[Point]) -> bool:
     return True
 
 
-def find_tip_over(shape: Shape[Any]) -> list[Finding]:
+def find_tip_over(shape: Shape[Any], *, bed_tol: float = BED_TOL) -> list[Finding]:
     """Return a finding if the part's COM falls outside its support polygon.
 
     Only flat faces lying in the bed plane contribute to the support polygon;
     parts that rest on tilted faces, edges, or points abstain (no finding).
     """
     points: list[Point] = [
-        (vertex.X, vertex.Y) for face in bed_contact_faces(shape) for vertex in face.vertices()
+        (vertex.X, vertex.Y) for face in bed_contact_faces(shape, bed_tol=bed_tol) for vertex in face.vertices()
     ]
     hull = _convex_hull(points)
     if len(hull) < 3:
