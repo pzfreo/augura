@@ -52,7 +52,8 @@ def analyze(
             Increase for noisy STEP imports where the lowest face is not exactly
             at the part's bounding-box minimum.
         min_feature: Smallest vertical feature (mm) to flag as capping the layer
-            height. Features at or above this threshold are not reported.
+            height. Features at or above this threshold are not reported. Has no
+            effect on mesh (STL) inputs — the mesh path has no thin-feature check.
 
     A tessellated mesh (trimesh) is accepted too and routed to the degraded,
     approximate mesh path; the exact BREP path is used for build123d shapes.
