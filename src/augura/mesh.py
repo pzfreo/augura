@@ -178,8 +178,8 @@ def analyze_mesh(
     bed = _bed_contact_tri_indices(mesh, bed_tol)
     findings = find_overhangs_mesh(mesh, support_angle=support_angle, bed_tol=bed_tol)
     findings += find_manifold_issues_mesh(mesh)
-    findings += find_tip_over_mesh(mesh, bed_indices=bed)
-    findings += find_brim_risk_mesh(mesh, bed_indices=bed)
+    findings += find_tip_over_mesh(mesh, bed_indices=bed, bed_tol=bed_tol)
+    findings += find_brim_risk_mesh(mesh, bed_indices=bed, bed_tol=bed_tol)
     if build_volume is not None:
         findings += find_bed_fit_mesh(mesh, build_volume)
     return Report(findings=tuple(findings))

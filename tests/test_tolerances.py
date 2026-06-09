@@ -24,13 +24,13 @@ def test_bed_contact_faces_custom_tol_large() -> None:
     assert len(large) >= len(default)
 
 
-def test_analyze_bed_tol_threads_through() -> None:
-    # Smoke test: the parameter reaches all downstream checks without error.
+def test_analyze_bed_tol_takes_effect() -> None:
+    # With bed_tol=0 the strict `<` comparison (abs(z - z_min) < 0) is never
+    # satisfied, so the bottom face is NOT excluded as bed-contact and instead
+    # appears as a downward-facing overhang.  This proves bed_tol is forwarded.
     box = Box(20, 20, 10)
-    report_default = analyze(box)
-    report_tight = analyze(box, bed_tol=0.0001)
-    # A clean Box is exact, so tightening the tolerance doesn't change results.
-    assert report_default.findings == report_tight.findings
+    assert analyze(box).overhangs == ()          # default: bottom excluded as bed-contact
+    assert analyze(box, bed_tol=0.0).overhangs  # zero tol: bottom becomes overhang
 
 
 def test_analyze_min_feature_suppresses_finding() -> None:

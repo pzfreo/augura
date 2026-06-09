@@ -136,6 +136,10 @@ def _build_parser() -> argparse.ArgumentParser:
     orient.add_argument("file", type=Path, help="STEP (.step/.stp) file")
     orient.add_argument("--format", choices=["text", "md", "json"], default="text")
     orient.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
+    orient.add_argument(
+        "--bed-tol", type=float, default=BED_TOL, metavar="MM",
+        help="Z tolerance (mm) for identifying bed-contact faces (default: %(default)s)",
+    )
     return parser
 
 
@@ -164,7 +168,7 @@ def _run_orientations(shape: Any, args: argparse.Namespace) -> int:
     if is_mesh(shape):
         print("augura: orientation search needs a STEP/BREP input, not a mesh", file=sys.stderr)
         return 2
-    scores = orientation_scores(shape, support_angle=args.support_angle)
+    scores = orientation_scores(shape, support_angle=args.support_angle, bed_tol=args.bed_tol)
     print(_render_orientations(scores, args.file.name, args.format))
     return 0
 

@@ -15,6 +15,7 @@ from typing import Any
 
 from build123d import Shape
 
+from augura.footprint import BED_TOL
 from augura.report import Finding, Severity
 
 DEFAULT_SUPPORT_ANGLE = 45.0
@@ -22,7 +23,6 @@ DEFAULT_SUPPORT_ANGLE = 45.0
 
 # A face counts as resting on the bed when its lowest point sits at the part's
 # minimum Z *and* it faces almost straight down.
-_BED_Z_TOL = 1e-3
 _BED_NORMAL_TOL = 0.99
 # Normals with a Z-component above this are upward or vertical: no overhang.
 _DOWNWARD_TOL = 1e-6
@@ -36,7 +36,7 @@ def find_overhangs(
     *,
     support_angle: float = DEFAULT_SUPPORT_ANGLE,
     faces: Iterable[Any] | None = None,
-    bed_tol: float = _BED_Z_TOL,
+    bed_tol: float = BED_TOL,
 ) -> list[Finding]:
     """Return one ``Finding`` per face that will need support to print.
 
