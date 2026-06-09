@@ -13,7 +13,7 @@ from typing import Any
 
 from build123d import Shape
 
-from augura.footprint import bed_contact_faces
+from augura.footprint import BED_TOL, bed_contact_faces
 from augura.report import Finding, Severity
 
 # Defaults: below this contact area, or above this height/sqrt(area) ratio, a
@@ -27,6 +27,7 @@ def find_brim_risk(
     *,
     min_footprint_area: float = DEFAULT_MIN_FOOTPRINT_AREA,
     max_aspect: float = DEFAULT_MAX_ASPECT,
+    bed_tol: float = BED_TOL,
 ) -> list[Finding]:
     """Return a brim recommendation if the part risks lifting off the bed.
 
@@ -35,7 +36,7 @@ def find_brim_risk(
     there is no planar footprint to measure (e.g. line contact).
     """
     bbox = shape.bounding_box()
-    footprint = sum(face.area for face in bed_contact_faces(shape))
+    footprint = sum(face.area for face in bed_contact_faces(shape, bed_tol=bed_tol))
     if footprint <= 0.0:
         return []  # no flat bed contact to assess
 

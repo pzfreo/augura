@@ -34,7 +34,7 @@ def is_mesh(obj: Any) -> bool:
 
 
 def find_overhangs_mesh(
-    mesh: Any, *, support_angle: float = DEFAULT_SUPPORT_ANGLE
+    mesh: Any, *, support_angle: float = DEFAULT_SUPPORT_ANGLE, bed_tol: float = _BED_TOL
 ) -> list[Finding]:
     """Approximate total overhang area from a mesh's downward triangles."""
     z_min = float(mesh.bounds[0][2])
@@ -44,7 +44,7 @@ def find_overhangs_mesh(
         if nz >= -_DOWNWARD_TOL:
             continue
         tri_min_z = float(mesh.triangles[index][:, 2].min())
-        if abs(tri_min_z - z_min) < _BED_TOL and nz < -_BED_NORMAL_TOL:
+        if abs(tri_min_z - z_min) < bed_tol and nz < -_BED_NORMAL_TOL:
             continue  # bed contact
         beta = math.degrees(math.acos(min(1.0, -nz)))
         if beta < support_angle - _ANGLE_TOL:
@@ -95,21 +95,21 @@ def find_bed_fit_mesh(
     return [Finding(kind="bed_fit", severity=Severity.ERROR, message=msg)]
 
 
-def _bed_contact_tri_indices(mesh: Any) -> list[int]:
-    """Indices of triangles whose vertices all lie within _BED_TOL of the mesh's lowest Z."""
+def _bed_contact_tri_indices(mesh: Any, bed_tol: float = _BED_TOL) -> list[int]:
+    """Indices of triangles whose vertices all lie within bed_tol of the mesh's lowest Z."""
     z_min = float(mesh.bounds[0][2])
     return [
         i
         for i, tri in enumerate(mesh.triangles)
-        if all(abs(float(v[2]) - z_min) < _BED_TOL for v in tri)
+        if all(abs(float(v[2]) - z_min) < bed_tol for v in tri)
     ]
 
 
 def find_tip_over_mesh(
-    mesh: Any, *, bed_indices: list[int] | None = None
+    mesh: Any, *, bed_indices: list[int] | None = None, bed_tol: float = _BED_TOL
 ) -> list[Finding]:
     """Flag instability: COM projects outside the XY convex hull of bed vertices."""
-    _bed = bed_indices if bed_indices is not None else _bed_contact_tri_indices(mesh)
+    _bed = bed_indices if bed_indices is not None else _bed_contact_tri_indices(mesh, bed_tol)
     points: list[tuple[float, float]] = [
         (float(v[0]), float(v[1]))
         for i in _bed
@@ -140,9 +140,10 @@ def find_brim_risk_mesh(
     min_footprint_area: float = DEFAULT_MIN_FOOTPRINT_AREA,
     max_aspect: float = DEFAULT_MAX_ASPECT,
     bed_indices: list[int] | None = None,
+    bed_tol: float = _BED_TOL,
 ) -> list[Finding]:
     """Recommend a brim when the mesh footprint is small or aspect ratio is high."""
-    _bed = bed_indices if bed_indices is not None else _bed_contact_tri_indices(mesh)
+    _bed = bed_indices if bed_indices is not None else _bed_contact_tri_indices(mesh, bed_tol)
     height = float(mesh.bounds[1][2]) - float(mesh.bounds[0][2])
     footprint = sum(float(mesh.area_faces[i]) for i in _bed)
     if footprint <= 0.0:
@@ -169,15 +170,16 @@ def analyze_mesh(
     *,
     support_angle: float = DEFAULT_SUPPORT_ANGLE,
     build_volume: tuple[float, float, float] | None = None,
+    bed_tol: float = _BED_TOL,
 ) -> Report:
     """Degraded, approximate analysis of a tessellated mesh."""
     if mesh.bounds is None:  # empty / degenerate mesh: nothing to analyse
         return Report()
-    bed = _bed_contact_tri_indices(mesh)
-    findings = find_overhangs_mesh(mesh, support_angle=support_angle)
+    bed = _bed_contact_tri_indices(mesh, bed_tol)
+    findings = find_overhangs_mesh(mesh, support_angle=support_angle, bed_tol=bed_tol)
     findings += find_manifold_issues_mesh(mesh)
-    findings += find_tip_over_mesh(mesh, bed_indices=bed)
-    findings += find_brim_risk_mesh(mesh, bed_indices=bed)
+    findings += find_tip_over_mesh(mesh, bed_indices=bed, bed_tol=bed_tol)
+    findings += find_brim_risk_mesh(mesh, bed_indices=bed, bed_tol=bed_tol)
     if build_volume is not None:
         findings += find_bed_fit_mesh(mesh, build_volume)
     return Report(findings=tuple(findings))

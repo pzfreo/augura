@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import Any
 
 from augura.analyze import analyze
+from augura.footprint import BED_TOL
 from augura.mesh import is_mesh
+from augura.min_feature import DEFAULT_MIN_FEATURE
 from augura.orientation import OrientationScore, orientation_scores
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE
 from augura.report import Report, Severity
@@ -120,12 +122,24 @@ def _build_parser() -> argparse.ArgumentParser:
     an.add_argument("--nozzle", type=float, default=DEFAULT_NOZZLE)
     an.add_argument("--min-perimeters", type=int, default=DEFAULT_MIN_PERIMETERS)
     an.add_argument("--build-volume", nargs=3, type=float, metavar=("X", "Y", "Z"), default=None)
+    an.add_argument(
+        "--bed-tol", type=float, default=BED_TOL, metavar="MM",
+        help="Z tolerance (mm) for identifying bed-contact faces (default: %(default)s)",
+    )
+    an.add_argument(
+        "--min-feature", type=float, default=DEFAULT_MIN_FEATURE, metavar="MM",
+        help="minimum vertical feature size (mm) to flag (default: %(default)s)",
+    )
     an.add_argument("--exit-code", action="store_true", help="exit 1 if any ERROR-severity finding")
 
     orient = sub.add_parser("orientations", help="rank print orientations by support need")
     orient.add_argument("file", type=Path, help="STEP (.step/.stp) file")
     orient.add_argument("--format", choices=["text", "md", "json"], default="text")
     orient.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
+    orient.add_argument(
+        "--bed-tol", type=float, default=BED_TOL, metavar="MM",
+        help="Z tolerance (mm) for identifying bed-contact faces (default: %(default)s)",
+    )
     return parser
 
 
@@ -141,6 +155,8 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
         build_volume=build_volume,
         nozzle=args.nozzle,
         min_perimeters=args.min_perimeters,
+        bed_tol=args.bed_tol,
+        min_feature=args.min_feature,
     )
     print(_render_report(report, args.file.name, args.format))
     if args.exit_code and any(f.severity is Severity.ERROR for f in report.findings):
@@ -152,7 +168,7 @@ def _run_orientations(shape: Any, args: argparse.Namespace) -> int:
     if is_mesh(shape):
         print("augura: orientation search needs a STEP/BREP input, not a mesh", file=sys.stderr)
         return 2
-    scores = orientation_scores(shape, support_angle=args.support_angle)
+    scores = orientation_scores(shape, support_angle=args.support_angle, bed_tol=args.bed_tol)
     print(_render_orientations(scores, args.file.name, args.format))
     return 0
 
