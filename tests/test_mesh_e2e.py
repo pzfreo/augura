@@ -11,6 +11,7 @@ import pytest
 from build123d import Box, Pos
 
 from augura import analyze
+from tests.fixtures import TIPPING_MAST
 
 trimesh = pytest.importorskip("trimesh")
 
@@ -63,3 +64,43 @@ def test_sphere_mesh_flags_only_shallow_overhangs() -> None:
     overhangs = analyze(sphere).overhangs
     assert overhangs
     assert all("approximate" in f.message for f in overhangs)
+
+
+# --- bed-fit ----------------------------------------------------------------
+
+def test_mesh_bed_fit_fits() -> None:
+    report = analyze(_mesh(Box(20, 20, 10)), build_volume=(100, 100, 100))
+    assert report.bed_fit == ()
+
+
+def test_mesh_bed_fit_overflows() -> None:
+    report = analyze(_mesh(Box(200, 20, 10)), build_volume=(100, 100, 100))
+    (finding,) = report.bed_fit
+    assert "approximate" in finding.message
+    assert "X" in finding.message
+
+
+# --- tip-over ---------------------------------------------------------------
+
+def test_mesh_tip_over_stable_box() -> None:
+    assert analyze(_mesh(Box(20, 20, 10))).tip_over == ()
+
+
+def test_mesh_tip_over_unstable() -> None:
+    (finding,) = analyze(_mesh(TIPPING_MAST.build())).tip_over
+    assert "approximate" in finding.message
+    assert "topple" in finding.message
+
+
+# --- brim risk --------------------------------------------------------------
+
+def test_mesh_brim_risk_wide_box_no_risk() -> None:
+    assert analyze(_mesh(Box(100, 100, 5))).brim == ()
+
+
+def test_mesh_brim_risk_small_footprint() -> None:
+    # 5x5 mm base, 80 mm tall — tiny footprint + high aspect
+    tall_pin = Pos(0, 0, 40) * Box(5, 5, 80)
+    findings = analyze(_mesh(tall_pin)).brim
+    assert findings
+    assert all("approximate" in f.message for f in findings)
