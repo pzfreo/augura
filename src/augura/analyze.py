@@ -50,7 +50,7 @@ def analyze(
     approximate mesh path; the exact BREP path is used for build123d shapes.
     """
     if is_mesh(shape):
-        return analyze_mesh(shape, support_angle=support_angle)
+        return analyze_mesh(shape, support_angle=support_angle, build_volume=build_volume)
     findings = find_overhangs(shape, support_angle=support_angle)
     findings += find_manifold_issues(shape)
     findings += find_tip_over(shape)
