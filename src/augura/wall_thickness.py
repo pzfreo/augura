@@ -4,10 +4,14 @@ Estimates the minimum wall thickness by casting rays from sample points on each
 face straight into the solid and measuring the distance to the opposite surface,
 then flags walls thinner than ``min_perimeters * nozzle``.
 
-Sampling strategy: every face is probed at its centre and at each vertex.
-For large faces (area exceeding ``GRID_AREA_THRESHOLD``) an additional interior
-grid is added using the face's UV parameterisation via OCC BRepAdaptor_Surface,
-so thin spots away from the centre or corners are not silently missed.
+Sampling strategy: every face is probed at its centre. For large faces (area
+exceeding ``GRID_AREA_THRESHOLD``) an additional interior grid is added using
+the face's UV parameterisation via OCC BRepAdaptor_Surface, so thin spots away
+from the centre are not silently missed.
+
+Vertices are intentionally excluded from sampling: they are topological boundary
+points shared with adjacent faces, and rays from them can intersect those
+adjacent faces at non-trivial distances, producing false thin-wall readings.
 
 Approximate by design: curved or very large faces may still have unsampled
 regions. A medial-axis method would be fully exhaustive.
@@ -32,20 +36,17 @@ _GRID_N = 3  # interior grid is (_GRID_N × _GRID_N) points
 def _face_sample_pairs(face: Any) -> list[tuple[Any, Any]]:
     """Return (point, inward_normal) pairs to probe for wall thickness.
 
-    Always includes the face centre plus every vertex. Adds a UV-space interior
-    grid for faces whose area exceeds ``GRID_AREA_THRESHOLD``.
+    Always includes the face centre. For large faces (area exceeding
+    ``GRID_AREA_THRESHOLD``) adds a UV-space interior grid so thin spots
+    away from the centre are not silently missed.
+
+    Vertices are excluded: they are boundary points shared with adjacent faces
+    and rays from them can hit those faces at real distances, producing false
+    thin-wall readings.
     """
     center = face.center()
     inward = -face.normal_at(center)
     pairs: list[tuple[Any, Any]] = [(center, inward)]
-
-    for v in face.vertices():
-        vp = Vector(v.X, v.Y, v.Z)
-        try:
-            vn = -face.normal_at(vp)
-        except Exception:
-            vn = inward
-        pairs.append((vp, vn))
 
     if face.area > GRID_AREA_THRESHOLD:
         try:
@@ -68,8 +69,8 @@ def _face_sample_pairs(face: Any) -> list[tuple[Any, Any]]:
                         except Exception:
                             gn = inward
                         pairs.append((gp, gn))
-        except ImportError:
-            pass  # OCP not available; fall back to centre + vertices
+        except Exception:  # ImportError or OCC Standard_Failure / RuntimeError
+            pass  # fall back to centre-only for this face
 
     return pairs
 

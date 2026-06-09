@@ -77,7 +77,13 @@ def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) 
         payload = {
             "source": source,
             "orientations": [
-                {"rotation": list(s.rotation), "overhang_area": s.overhang_area} for s in scores
+                {
+                    "rotation": list(s.rotation),
+                    "overhang_area": s.overhang_area,
+                    "z_height_mm": s.z_height,
+                    "bed_contact_mm2": s.bed_contact_area,
+                }
+                for s in scores
             ],
         }
         return json.dumps(payload, indent=2)
@@ -85,17 +91,19 @@ def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) 
         lines = [
             f"# augura orientations - `{source}`",
             "",
-            "| Rank | Rotation (deg) | Overhang area (mm2) |",
-            "| --- | --- | --- |",
+            "| Rank | Rotation (deg) | Overhang (mm2) | Z-height (mm) | Bed contact (mm2) |",
+            "| --- | --- | --- | --- | --- |",
         ]
         lines += [
-            f"| {i} | {s.rotation} | {s.overhang_area:.1f} |" for i, s in enumerate(scores, 1)
+            f"| {i} | {s.rotation} | {s.overhang_area:.1f} | {s.z_height:.1f} | {s.bed_contact_area:.0f} |"
+            for i, s in enumerate(scores, 1)
         ]
         return "\n".join([*lines, ""]) + "\n"
     # text
     lines = [f"augura orientations - {source} (best first)"]
     lines += [
-        f"  {i}. rotation {s.rotation} -> {s.overhang_area:.1f} mm2 unsupported overhang"
+        f"  {i}. rotation {s.rotation} -> {s.overhang_area:.1f} mm2 overhang, "
+        f"{s.z_height:.1f} mm tall, {s.bed_contact_area:.0f} mm2 contact"
         for i, s in enumerate(scores, 1)
     ]
     return "\n".join(lines)
