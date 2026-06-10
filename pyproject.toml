@@ -41,7 +41,7 @@ dev = [
     "pytest",
     "pytest-cov>=7.1.0",
     "mypy",
-    "ruff",
+    "ruff==0.15.16",
 ]
 
 [tool.ruff]

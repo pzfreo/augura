@@ -68,6 +68,7 @@ def test_sphere_mesh_flags_only_shallow_overhangs() -> None:
 
 # --- bed-fit ----------------------------------------------------------------
 
+
 def test_mesh_bed_fit_fits() -> None:
     report = analyze(_mesh(Box(20, 20, 10)), build_volume=(100, 100, 100))
     assert report.bed_fit == ()
@@ -82,6 +83,7 @@ def test_mesh_bed_fit_overflows() -> None:
 
 # --- tip-over ---------------------------------------------------------------
 
+
 def test_mesh_tip_over_stable_box() -> None:
     assert analyze(_mesh(Box(20, 20, 10))).tip_over == ()
 
@@ -93,6 +95,7 @@ def test_mesh_tip_over_unstable() -> None:
 
 
 # --- brim risk --------------------------------------------------------------
+
 
 def test_mesh_brim_risk_wide_box_no_risk() -> None:
     assert analyze(_mesh(Box(100, 100, 5))).brim == ()

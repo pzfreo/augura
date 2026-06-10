@@ -5,7 +5,7 @@ from __future__ import annotations
 from build123d import Box
 
 from augura import analyze
-from augura.footprint import BED_TOL, bed_contact_faces
+from augura.footprint import bed_contact_faces
 from tests.fixtures import THIN_LAMINA_BLOCK
 
 
@@ -29,7 +29,7 @@ def test_analyze_bed_tol_takes_effect() -> None:
     # satisfied, so the bottom face is NOT excluded as bed-contact and instead
     # appears as a downward-facing overhang.  This proves bed_tol is forwarded.
     box = Box(20, 20, 10)
-    assert analyze(box).overhangs == ()          # default: bottom excluded as bed-contact
+    assert analyze(box).overhangs == ()  # default: bottom excluded as bed-contact
     assert analyze(box, bed_tol=0.0).overhangs  # zero tol: bottom becomes overhang
 
 
@@ -44,6 +44,7 @@ def test_analyze_min_feature_suppresses_finding() -> None:
 def test_analyze_min_feature_exposes_more_findings() -> None:
     # A part with a 5mm feature is safe at default 0.5; flagged at 10mm threshold.
     from tests.fixtures import FLAT_PLATE
+
     part = FLAT_PLATE.build()
     assert analyze(part).min_feature == ()
     assert analyze(part, min_feature=10.0).min_feature  # 5mm feature now too small

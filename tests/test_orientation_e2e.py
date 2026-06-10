@@ -34,7 +34,9 @@ def test_tie_breaking_by_z_height_and_bed_contact() -> None:
     scores = orientation_scores(Box(80, 20, 10))
 
     assert all(s.overhang_area == 0.0 for s in scores), "symmetric box should have no overhangs"
-    assert scores == sorted(scores, key=lambda s: (s.overhang_area, s.z_height, -s.bed_contact_area))
+    assert scores == sorted(
+        scores, key=lambda s: (s.overhang_area, s.z_height, -s.bed_contact_area)
+    )
 
     # The flattest orientation (z_height=10) must rank above taller ones.
     assert scores[0].z_height == pytest.approx(10.0, abs=0.01)

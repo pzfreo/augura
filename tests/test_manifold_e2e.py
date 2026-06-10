@@ -48,9 +48,7 @@ def test_open_solid_is_flagged_not_watertight() -> None:
     open_shell = Shell(Box(20, 20, 20).faces()[:-1])
     # OCCT happily builds a Solid around an open shell without validating
     # closure — exactly what a malformed STEP import yields.
-    bad_solid = Solid(
-        BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(open_shell.wrapped)).Solid()
-    )
+    bad_solid = Solid(BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(open_shell.wrapped)).Solid())
 
     assert is_watertight(bad_solid) is False
     issues = find_manifold_issues(bad_solid)

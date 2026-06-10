@@ -62,7 +62,9 @@ def analyze(
     if is_cadquery(shape):
         shape = as_build123d(shape)
     if is_mesh(shape):
-        return analyze_mesh(shape, support_angle=support_angle, build_volume=build_volume, bed_tol=bed_tol)
+        return analyze_mesh(
+            shape, support_angle=support_angle, build_volume=build_volume, bed_tol=bed_tol
+        )
     findings = find_overhangs(shape, support_angle=support_angle, bed_tol=bed_tol)
     findings += find_manifold_issues(shape)
     findings += find_tip_over(shape, bed_tol=bed_tol)

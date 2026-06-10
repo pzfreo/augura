@@ -49,7 +49,7 @@ def find_overhangs(
     z_min = shape.bounding_box().min.Z
     findings: list[Finding] = []
 
-    for face in (faces if faces is not None else shape.faces()):
+    for face in faces if faces is not None else shape.faces():
         normal = face.normal_at(face.center())
         nz = normal.Z
 
