@@ -25,6 +25,15 @@ def stl_box(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture
+def upside_down_t(tmp_path: Path) -> Path:
+    # An upside-down T: the plate's underside ring overhangs as imported, and
+    # flipping 180 deg (plate on the bed) is the only candidate with none.
+    path = tmp_path / "upside_down_t.step"
+    export_step(Box(5, 5, 10) + Pos(0, 0, 7.5) * Box(20, 20, 5), path)
+    return path
+
+
 def test_analyze_text_clean(step_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["analyze", str(step_box)]) == 0
     assert "No printability issues found" in capsys.readouterr().out
@@ -55,6 +64,7 @@ def test_analyze_md_with_findings(step_box: Path, capsys: pytest.CaptureFixture[
 def test_analyze_estampo_clean(step_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["analyze", str(step_box), "--format", "estampo"]) == 0
     out = capsys.readouterr().out
+    assert "from box.step" in out  # provenance in the header comment
     assert "enable_support = false" in out
     assert 'brim_type = "no_brim"' in out
     assert "[slicer.overrides]" not in out  # clean report -> minimal fragment
@@ -70,14 +80,9 @@ def test_analyze_estampo_with_findings(step_box: Path, capsys: pytest.CaptureFix
 
 
 def test_analyze_estampo_best_orientation(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    upside_down_t: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An upside-down T: the plate's underside ring overhangs as imported, and
-    # flipping 180 deg (plate on the bed) is the only candidate with none.
-    path = tmp_path / "upside_down_t.step"
-    export_step(Box(5, 5, 10) + Pos(0, 0, 7.5) * Box(20, 20, 5), path)
-
-    base = ["analyze", str(path), "--format", "estampo"]
+    base = ["analyze", str(upside_down_t), "--format", "estampo"]
     assert main(base) == 0
     assert "enable_support = true" in capsys.readouterr().out  # as imported
 
@@ -88,34 +93,66 @@ def test_analyze_estampo_best_orientation(
     assert "enable_support = false" in out
 
 
-def test_best_orientation_text_json_md(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # Same upside-down T: every format must report the flip and the flipped
-    # part's (clean) findings.
-    path = tmp_path / "upside_down_t.step"
-    export_step(Box(5, 5, 10) + Pos(0, 0, 7.5) * Box(20, 20, 5), path)
-    base = ["analyze", str(path), "--best-orientation"]
+def test_best_orientation_text_json_md(
+    upside_down_t: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Every format must report the flip and the flipped part's (clean) findings.
+    base = ["analyze", str(upside_down_t), "--best-orientation"]
 
     assert main(base) == 0  # text is the default
     out = capsys.readouterr().out
-    assert "rotated to best print orientation [180, 0, 0]" in out
+    assert "analysed at rotation [180, 0, 0]" in out
     assert "No printability issues found" in out
 
     assert main([*base, "--format", "json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["orientation"] == [180, 0, 0]
+    assert data["rotation"] == [180, 0, 0]
     assert data["findings"] == []
 
     assert main([*base, "--format", "md"]) == 0
     out = capsys.readouterr().out
-    assert "rotated to best print orientation [180, 0, 0]" in out
+    assert "analysed at rotation [180, 0, 0]" in out
     assert "No printability issues found" in out
 
 
-def test_json_without_best_orientation_has_no_orientation_key(
+def test_analyze_orient_explicit(upside_down_t: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # A user-chosen pose (e.g. picked from `augura orientations`) flows through
+    # the same rotate-and-analyse path as --best-orientation.
+    cmd = ["analyze", str(upside_down_t), "--format", "estampo", "--orient", "180", "0", "0"]
+    assert main(cmd) == 0
+    out = capsys.readouterr().out
+    assert "orient = [180, 0, 0]" in out
+    assert "enable_support = false" in out
+
+
+def test_orient_and_best_orientation_are_exclusive(step_box: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(["analyze", str(step_box), "--best-orientation", "--orient", "0", "0", "0"])
+
+
+def test_best_orientation_prefers_pose_that_fits(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A tall T: flipped plate-down it is overhang-free but 55 mm tall; on its
+    # side it fits a 40 mm-Z volume at the cost of supporting the stem.
+    path = tmp_path / "tall_t.step"
+    export_step(Box(5, 5, 50) + Pos(0, 0, 27.5) * Box(30, 30, 5), path)
+    base = ["analyze", str(path), "--format", "estampo", "--best-orientation"]
+
+    assert main(base) == 0
+    assert "orient = [180, 0, 0]" in capsys.readouterr().out  # unconstrained: flip wins
+
+    assert main([*base, "--build-volume", "60", "60", "40"]) == 0
+    out = capsys.readouterr().out
+    assert "orient = [180, 0, 0]" not in out  # the 55 mm flip doesn't fit
+    assert "exceeds build volume" not in out  # the chosen pose does
+
+
+def test_json_without_best_orientation_has_no_rotation_key(
     step_box: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["analyze", str(step_box), "--format", "json"]) == 0
-    assert "orientation" not in json.loads(capsys.readouterr().out)
+    assert "rotation" not in json.loads(capsys.readouterr().out)
 
 
 def test_best_orientation_rejects_mesh(stl_box: Path, capsys: pytest.CaptureFixture[str]) -> None:

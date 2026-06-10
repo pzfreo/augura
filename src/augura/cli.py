@@ -20,14 +20,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from build123d import Pos, Rotation
-
 from augura.analyze import analyze
 from augura.estampo import to_estampo_toml
 from augura.footprint import BED_TOL
 from augura.mesh import is_mesh
 from augura.min_feature import DEFAULT_MIN_FEATURE
-from augura.orientation import OrientationScore, orientation_scores
+from augura.orientation import OrientationScore, apply_orientation, orientation_scores
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE
 from augura.report import Report, Severity
 from augura.wall_thickness import DEFAULT_MIN_PERIMETERS, DEFAULT_NOZZLE
@@ -59,14 +57,14 @@ def _render_report(
     report: Report, source: str, fmt: str, orient: tuple[float, float, float] | None = None
 ) -> str:
     if fmt == "estampo":
-        return to_estampo_toml(report, orient=orient)
+        return to_estampo_toml(report, orient=orient, source=source)
     if fmt == "json":
         payload: dict[str, Any] = {"source": source}
         if orient is not None:
-            payload["orientation"] = list(orient)
+            payload["rotation"] = list(orient)
         return json.dumps({**payload, **report.to_dict()}, indent=2)
     orient_note = (
-        f"rotated to best print orientation [{orient[0]:g}, {orient[1]:g}, {orient[2]:g}]"
+        f"analysed at rotation [{orient[0]:g}, {orient[1]:g}, {orient[2]:g}]"
         if orient is not None
         else None
     )
@@ -158,11 +156,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="minimum vertical feature size (mm) to flag (default: %(default)s)",
     )
     an.add_argument("--exit-code", action="store_true", help="exit 1 if any ERROR-severity finding")
-    an.add_argument(
+    pose = an.add_mutually_exclusive_group()
+    pose.add_argument(
         "--best-orientation",
         action="store_true",
-        help="rotate the part to its top-ranked print orientation before analysing;"
-        " the rotation [X, Y, Z] is reported in the output (STEP input only)",
+        help="rotate the part to its top-ranked print orientation before analysing"
+        " (with --build-volume, poses that fit rank first); the rotation [X, Y, Z]"
+        " is reported in the output (STEP input only)",
+    )
+    pose.add_argument(
+        "--orient",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+        default=None,
+        help="analyse at this explicit (X, Y, Z) Euler rotation in degrees, e.g. a pose"
+        " chosen from 'augura orientations' (STEP input only)",
     )
 
     orient = sub.add_parser("orientations", help="rank print orientations by support need")
@@ -186,20 +195,22 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
         else None
     )
     orient: tuple[float, float, float] | None = None
-    if args.best_orientation:
+    if args.best_orientation or args.orient is not None:
         if is_mesh(shape):
-            print(
-                "augura: --best-orientation needs a STEP/BREP input, not a mesh",
-                file=sys.stderr,
-            )
-            return 2
-        best = orientation_scores(shape, support_angle=args.support_angle, bed_tol=args.bed_tol)[0]
-        orient = best.rotation
+            raise ValueError("--best-orientation/--orient need a STEP/BREP input, not a mesh")
+        if args.orient is not None:
+            orient = (args.orient[0], args.orient[1], args.orient[2])
+        else:
+            orient = orientation_scores(
+                shape,
+                support_angle=args.support_angle,
+                bed_tol=args.bed_tol,
+                build_volume=build_volume,
+            )[0].rotation
         # Analyse the part as it will actually print: rotated and dropped onto
-        # the bed (same transform orientation_scores used to rank it), so the
-        # report describes the part at the orientation it emits.
-        shape = Rotation(*orient) * shape
-        shape = Pos(0, 0, -shape.bounding_box().min.Z) * shape
+        # the bed (the same pose orientation_scores evaluates), so the report
+        # describes the part at the rotation it emits.
+        shape = apply_orientation(shape, orient)
     report = analyze(
         shape,
         support_angle=args.support_angle,
@@ -217,8 +228,7 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
 
 def _run_orientations(shape: Any, args: argparse.Namespace) -> int:
     if is_mesh(shape):
-        print("augura: orientation search needs a STEP/BREP input, not a mesh", file=sys.stderr)
-        return 2
+        raise ValueError("orientation search needs a STEP/BREP input, not a mesh")
     scores = orientation_scores(shape, support_angle=args.support_angle, bed_tol=args.bed_tol)
     print(_render_orientations(scores, args.file.name, args.format))
     return 0
