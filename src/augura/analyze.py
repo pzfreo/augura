@@ -13,6 +13,7 @@ from build123d import Shape
 
 from augura.bed_fit import find_bed_fit
 from augura.brim import find_brim_risk
+from augura.cadquery_adapter import as_build123d, is_cadquery
 from augura.footprint import BED_TOL
 from augura.manifold import find_manifold_issues
 from augura.mesh import analyze_mesh, is_mesh
@@ -58,6 +59,8 @@ def analyze(
     A tessellated mesh (trimesh) is accepted too and routed to the degraded,
     approximate mesh path; the exact BREP path is used for build123d shapes.
     """
+    if is_cadquery(shape):
+        shape = as_build123d(shape)
     if is_mesh(shape):
         return analyze_mesh(shape, support_angle=support_angle, build_volume=build_volume, bed_tol=bed_tol)
     findings = find_overhangs(shape, support_angle=support_angle, bed_tol=bed_tol)
