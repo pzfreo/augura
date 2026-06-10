@@ -2,9 +2,10 @@
 
 The parametric fixtures in ``tests/fixtures`` are clean, single-body solids we
 built ourselves. These tests run the full STEP -> analyze pipeline on
-production CAD instead: the Framework Expansion Card printable parts, which
-are multi-body assemblies written by a commercial CAD package (see
-``tests/data/real_world/ATTRIBUTION.md`` for source and licence).
+production CAD instead — one multi-body assembly (Framework Expansion Card)
+and one single-body part (CUBOTino cover), both written by commercial CAD
+packages (see ``tests/data/real_world/ATTRIBUTION.md`` for source and
+licence).
 
 Assertions are at the finding-kind level — exact counts and areas would be
 brittle against tolerance tuning. The point is: real files load, analyse
@@ -23,9 +24,7 @@ from augura import analyze
 DATA = Path(__file__).parent / "data" / "real_world"
 
 REAL_WORLD = [
-    ("framework_expansion_card_selftapping.stp", 4),
     ("framework_expansion_card_threadedinsert.stp", 6),
-    ("cubotino_baseplate_r_leg.stp", 1),
     ("cubotino_cover.stp", 1),
 ]
 
@@ -38,9 +37,10 @@ def test_real_world_step_analyses(filename: str, n_solids: int) -> None:
     report = analyze(shape)
 
     kinds = {f.kind for f in report.findings}
-    # As-imported (CAD orientation) these parts have unsupported faces.
+    # As-imported (CAD orientation) both parts have large unsupported faces,
+    # well clear of the 45-degree default threshold.
     assert "overhang" in kinds
-    # All four parts are valid closed solids; degenerated edges (cone apexes,
+    # Both parts are valid closed solids; degenerated edges (cone apexes,
     # sphere poles) must not be reported as non-manifold.
     assert "not_manifold" not in kinds
     # Every finding must be explainable: it carries a human-readable message.

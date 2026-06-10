@@ -7,8 +7,6 @@ STEP writers) rather than only our own parametric fixtures.
 
 ## Framework Expansion Cards
 
-- `framework_expansion_card_selftapping.stp`
-  (upstream: `Mechanical/Printable/3D/ExpansionCard_SelfTapping.stp`)
 - `framework_expansion_card_threadedinsert.stp`
   (upstream: `Mechanical/Printable/3D/ExpansionCard_ThreadedInsert.stp`)
 
@@ -20,7 +18,6 @@ Copyright Framework Computer Inc. Licensed under
 
 ## CUBOTino micro
 
-- `cubotino_baseplate_r_leg.stp` (upstream: `stp/Baseplate_R_leg.stp`)
 - `cubotino_cover.stp` (upstream: `stp/Cover.stp`)
 
 Source: [AndreaFavero71/CUBOTino_micro](https://github.com/AndreaFavero71/CUBOTino_micro)
