@@ -15,19 +15,18 @@ from __future__ import annotations
 from typing import Any
 
 from build123d import Compound, Shape, Solid
+from OCP.TopoDS import TopoDS_Shape
 
 
 def is_cadquery(obj: Any) -> bool:
-    """Return True if *obj* looks like a CadQuery object.
+    """Return True if *obj* comes from the cadquery package.
 
-    Detects by module prefix (``cadquery.*``) and the presence of either
-    ``.wrapped`` (``cadquery.Shape`` subclass) or ``.val()`` (``Workplane``).
-    Does not import cadquery.
+    Detects by module prefix (``cadquery.*``) alone — every CadQuery object is
+    routed to :func:`as_build123d`, which raises a clear error for types it
+    cannot convert (e.g. ``Assembly``). Does not import cadquery.
     """
     module = type(obj).__module__
-    if not (module == "cadquery" or module.startswith("cadquery.")):
-        return False
-    return hasattr(obj, "wrapped") or (hasattr(obj, "val") and callable(obj.val))
+    return module == "cadquery" or module.startswith("cadquery.")
 
 
 def as_build123d(cq_obj: Any) -> Shape:
@@ -64,7 +63,16 @@ def as_build123d(cq_obj: Any) -> Shape:
     if not hasattr(cq_obj, "wrapped"):
         raise TypeError(
             f"Cannot convert {type(cq_obj).__qualname__!r} to a build123d Shape; "
-            "expected a cadquery.Shape subclass or Workplane"
+            "expected a cadquery.Shape subclass or Workplane "
+            "(for an Assembly, flatten it first, e.g. assembly.toCompound())"
+        )
+
+    # cq.Vector / cq.Location also have .wrapped, but it holds a gp_Vec /
+    # TopLoc_Location rather than OCCT topology — reject before cast.
+    if not isinstance(cq_obj.wrapped, TopoDS_Shape):
+        raise TypeError(
+            f"{type(cq_obj).__qualname__!r}.wrapped is not OCCT topology; "
+            "expected a cadquery.Shape subclass wrapping a TopoDS_Shape"
         )
 
     result = Compound.cast(cq_obj.wrapped)
@@ -73,14 +81,21 @@ def as_build123d(cq_obj: Any) -> Shape:
     # sense for solid bodies — reject faces/shells/wires up front, and refuse
     # multi-body compounds rather than silently analysing them as one part.
     if isinstance(result, Compound):
-        n_solids = len(result.solids())
-        if n_solids == 0:
+        solids = result.solids()
+        if len(solids) == 0:
             raise TypeError(
                 "CadQuery input contains no solids; augura analyses solid bodies"
             )
-        if n_solids > 1:
+        if len(solids) > 1:
             raise ValueError(
-                f"CadQuery input contains {n_solids} solids; analyse one part at a time"
+                f"CadQuery input contains {len(solids)} solids; analyse one part at a time"
+            )
+        # A compound mixing one solid with free faces/shells would silently
+        # corrupt area-based findings — every face must belong to the solid.
+        if len(result.faces()) != len(solids[0].faces()):
+            raise TypeError(
+                "CadQuery input mixes a solid with stray non-solid geometry; "
+                "pass the solid alone"
             )
     elif not isinstance(result, Solid):
         raise TypeError(

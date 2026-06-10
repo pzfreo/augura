@@ -140,6 +140,52 @@ def test_as_build123d_face_raises() -> None:
         as_build123d(mock)
 
 
+def test_as_build123d_non_topology_wrapped_raises() -> None:
+    """cq.Vector/cq.Location have .wrapped holding non-topology — clear error."""
+
+    class _FakeGpVec:
+        pass
+
+    mock = _make_mock_cq_shape(_FakeGpVec())
+    with pytest.raises(TypeError, match="not OCCT topology"):
+        as_build123d(mock)
+
+
+def test_as_build123d_none_wrapped_raises() -> None:
+    mock = _make_mock_cq_shape(None)
+    with pytest.raises(TypeError, match="not OCCT topology"):
+        as_build123d(mock)
+
+
+def test_analyze_assembly_like_raises_clearly() -> None:
+    """An Assembly-like object (no .wrapped, no .vals) gets a clear TypeError
+    from the adapter rather than an AttributeError deep in the pipeline."""
+
+    class _MockAssembly:
+        pass
+
+    _MockAssembly.__module__ = "cadquery.assembly"
+    assert is_cadquery(_MockAssembly())
+    with pytest.raises(TypeError, match="Assembly, flatten"):
+        analyze(_MockAssembly())
+
+
+def test_as_build123d_solid_with_stray_face_raises() -> None:
+    """A compound mixing one solid with a free face is rejected, not analysed."""
+    from OCP.BRep import BRep_Builder
+    from OCP.TopoDS import TopoDS_Compound
+
+    builder = BRep_Builder()
+    compound = TopoDS_Compound()
+    builder.MakeCompound(compound)
+    builder.Add(compound, Box(5, 5, 5).wrapped)
+    builder.Add(compound, _B3D_BOX.faces()[0].wrapped)
+
+    mock = _make_mock_cq_shape(compound)
+    with pytest.raises(TypeError, match="stray non-solid geometry"):
+        as_build123d(mock)
+
+
 def test_as_build123d_multi_solid_compound_raises() -> None:
     """A multi-body compound passed as a direct Shape (not Workplane) is rejected."""
     from OCP.BRep import BRep_Builder
