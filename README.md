@@ -70,8 +70,9 @@ augura analyze bracket.step --build-volume 256 256 256 --support-angle 50
 # Gate a build: exit non-zero if any ERROR-severity issue (great for CI / pre-slice)
 augura analyze bracket.step --exit-code
 
-# Rank print orientations by how much support each needs (STEP only)
-augura orientations bracket.step --format json
+# Rank print orientations by how much support each needs (STEP only);
+# --build-volume ranks poses that fit first and marks those that don't
+augura orientations bracket.step --format json --build-volume 256 256 256
 ```
 
 `augura analyze` accepts `.step` / `.stp` (exact BREP path) or `.stl` (mesh path).
@@ -102,7 +103,7 @@ augura — bracket.step
 |---|---|
 | `--format text\|md\|json\|estampo` | output format (default `text`); `estampo` (analyze only) emits an estampo.toml fragment |
 | `--best-orientation` | rotate to the top-ranked print orientation before analysing (poses that fit `--build-volume` rank first); the rotation is reported in the output (STEP input only) |
-| `--orient X Y Z` | analyse at this explicit Euler rotation (degrees) instead — e.g. a pose chosen from `augura orientations` |
+| `--orient X Y Z` | analyse at this explicit Euler rotation (degrees) instead — e.g. a pose chosen from `augura orientations` (STEP input only) |
 | `--support-angle` | overhang threshold, degrees from horizontal (default 45) |
 | `--nozzle` / `--min-perimeters` | wall-thickness limit = `min_perimeters × nozzle` |
 | `--build-volume X Y Z` | enable the bed-fit check against this volume (mm) |

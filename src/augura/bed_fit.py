@@ -13,7 +13,7 @@ from build123d import Shape
 from augura.report import Finding, Severity
 
 # mm slack so an exact fit is not flagged on rounding noise.
-_FIT_TOL = 1e-6
+FIT_TOL = 1e-6
 
 
 def find_bed_fit(shape: Shape[Any], build_volume: tuple[float, float, float]) -> list[Finding]:
@@ -33,7 +33,7 @@ def find_bed_fit(shape: Shape[Any], build_volume: tuple[float, float, float]) ->
     over = [
         axis
         for axis, extent, limit in zip("XYZ", extents, build_volume, strict=True)
-        if extent > limit + _FIT_TOL
+        if extent > limit + FIT_TOL
     ]
     if not over:
         return []

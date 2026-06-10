@@ -34,6 +34,15 @@ def upside_down_t(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture
+def tall_t(tmp_path: Path) -> Path:
+    # A tall T: flipped plate-down it is overhang-free but 55 mm tall; on its
+    # side it fits a 40 mm-Z volume at the cost of supporting the stem.
+    path = tmp_path / "tall_t.step"
+    export_step(Box(5, 5, 50) + Pos(0, 0, 27.5) * Box(30, 30, 5), path)
+    return path
+
+
 def test_analyze_text_clean(step_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["analyze", str(step_box)]) == 0
     assert "No printability issues found" in capsys.readouterr().out
@@ -131,13 +140,9 @@ def test_orient_and_best_orientation_are_exclusive(step_box: Path) -> None:
 
 
 def test_best_orientation_prefers_pose_that_fits(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tall_t: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A tall T: flipped plate-down it is overhang-free but 55 mm tall; on its
-    # side it fits a 40 mm-Z volume at the cost of supporting the stem.
-    path = tmp_path / "tall_t.step"
-    export_step(Box(5, 5, 50) + Pos(0, 0, 27.5) * Box(30, 30, 5), path)
-    base = ["analyze", str(path), "--format", "estampo", "--best-orientation"]
+    base = ["analyze", str(tall_t), "--format", "estampo", "--best-orientation"]
 
     assert main(base) == 0
     assert "orient = [180, 0, 0]" in capsys.readouterr().out  # unconstrained: flip wins
@@ -146,6 +151,24 @@ def test_best_orientation_prefers_pose_that_fits(
     out = capsys.readouterr().out
     assert "orient = [180, 0, 0]" not in out  # the 55 mm flip doesn't fit
     assert "exceeds build volume" not in out  # the chosen pose does
+
+
+def test_orientations_build_volume(tall_t: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # The orientations frontier must rank with the same feasibility-first key
+    # --best-orientation uses, and say which poses fit.
+    cmd = ["orientations", str(tall_t), "--format", "json", "--build-volume", "60", "60", "40"]
+    assert main(cmd) == 0
+    data = json.loads(capsys.readouterr().out)
+    first = data["orientations"][0]
+    assert first["fits_build_volume"] is True
+    assert first["rotation"] != [180, 0, 0]  # the 55 mm flip is demoted
+
+    assert main(["orientations", str(tall_t), "--format", "json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert "fits_build_volume" not in data["orientations"][0]  # not asked for
+
+    assert main(["orientations", str(tall_t), "--build-volume", "60", "60", "40"]) == 0
+    assert "(exceeds build volume)" in capsys.readouterr().out  # text marks misfits
 
 
 def test_json_without_best_orientation_has_no_rotation_key(

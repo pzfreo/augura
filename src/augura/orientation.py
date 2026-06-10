@@ -16,6 +16,7 @@ from typing import Any
 
 from build123d import Pos, Rotation, Shape
 
+from augura.bed_fit import FIT_TOL
 from augura.cadquery_adapter import as_build123d, is_cadquery
 from augura.footprint import BED_TOL, bed_contact_faces
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
@@ -34,12 +35,28 @@ _AXIS_ORIENTATIONS: list[Rotation3] = [
 
 @dataclass(frozen=True)
 class OrientationScore:
-    """A candidate orientation and the metrics used to rank it."""
+    """A candidate orientation and the metrics used to rank it.
+
+    ``fits_build_volume`` is ``None`` unless :func:`orientation_scores` was
+    given a ``build_volume`` to check against.
+    """
 
     rotation: Rotation3
     overhang_area: float
     z_height: float = 0.0
     bed_contact_area: float = 0.0
+    fits_build_volume: bool | None = None
+
+
+def _pose(shape: Shape[Any], rotation: Rotation3) -> tuple[Shape[Any], Any]:
+    """Rotate then drop onto the bed; also returns the pre-drop bounding box
+    (extents are translation-invariant, so it describes the posed part too)."""
+    if is_cadquery(shape):
+        shape = as_build123d(shape)
+    oriented = Rotation(*rotation) * shape
+    bb = oriented.bounding_box()
+    dropped: Shape[Any] = Pos(0, 0, -bb.min.Z) * oriented
+    return dropped, bb
 
 
 def apply_orientation(shape: Shape[Any], rotation: Rotation3) -> Shape[Any]:
@@ -49,11 +66,7 @@ def apply_orientation(shape: Shape[Any], rotation: Rotation3) -> Shape[Any]:
     ``Rotation`` convention: intrinsic rotations about X, then Y, then Z). The
     rotated part is dropped onto the bed (min Z → 0).
     """
-    if is_cadquery(shape):
-        shape = as_build123d(shape)
-    oriented = Rotation(*rotation) * shape
-    dropped: Shape[Any] = Pos(0, 0, -oriented.bounding_box().min.Z) * oriented
-    return dropped
+    return _pose(shape, rotation)[0]
 
 
 def orientation_scores(
@@ -70,7 +83,8 @@ def orientation_scores(
     Tie-breakers: shorter Z-height, then greater bed-contact area.
     When *build_volume* is given, poses whose bounding box fits it rank before
     poses that don't (so a feasible pose always beats an infeasible one); if
-    nothing fits, the ranking is unchanged.
+    nothing fits, the ranking is unchanged. Each score's ``fits_build_volume``
+    records the per-pose result.
 
     Each candidate is an ``(X, Y, Z)`` Euler rotation in degrees (build123d
     ``Rotation`` convention; see :func:`apply_orientation`); the rotated part
@@ -79,14 +93,18 @@ def orientation_scores(
     if is_cadquery(shape):
         shape = as_build123d(shape)
     rotations = _AXIS_ORIENTATIONS if candidates is None else candidates
-    keyed: list[tuple[bool, OrientationScore]] = []
+    scores: list[OrientationScore] = []
     for rotation in rotations:
-        oriented = apply_orientation(shape, rotation)
-        size = oriented.bounding_box().size
-        oversize = build_volume is not None and any(
-            float(d) > limit
-            for d, limit in zip((size.X, size.Y, size.Z), build_volume, strict=True)
-        )
+        oriented, bb = _pose(shape, rotation)
+        size = bb.size
+        fits: bool | None = None
+        if build_volume is not None:
+            # Same slack as find_bed_fit, so the two checks cannot disagree on
+            # an exact fit.
+            fits = all(
+                float(d) <= limit + FIT_TOL
+                for d, limit in zip((size.X, size.Y, size.Z), build_volume, strict=True)
+            )
         faces = list(oriented.faces())
         area = float(
             sum(
@@ -99,16 +117,21 @@ def orientation_scores(
         contact = float(
             sum(f.area for f in bed_contact_faces(oriented, faces=faces, bed_tol=bed_tol))
         )
-        keyed.append(
-            (
-                oversize,
-                OrientationScore(
-                    rotation=rotation,
-                    overhang_area=area,
-                    z_height=float(size.Z),
-                    bed_contact_area=contact,
-                ),
+        scores.append(
+            OrientationScore(
+                rotation=rotation,
+                overhang_area=area,
+                z_height=float(size.Z),
+                bed_contact_area=contact,
+                fits_build_volume=fits,
             )
         )
-    keyed.sort(key=lambda k: (k[0], k[1].overhang_area, k[1].z_height, -k[1].bed_contact_area))
-    return [score for _, score in keyed]
+    return sorted(
+        scores,
+        key=lambda s: (
+            s.fits_build_volume is False,
+            s.overhang_area,
+            s.z_height,
+            -s.bed_contact_area,
+        ),
+    )
