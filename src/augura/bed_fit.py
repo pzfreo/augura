@@ -6,6 +6,7 @@ orientation) against a build volume and flags any axis that overflows.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from build123d import Shape
@@ -13,7 +14,20 @@ from build123d import Shape
 from augura.report import Finding, Severity
 
 # mm slack so an exact fit is not flagged on rounding noise.
-_FIT_TOL = 1e-6
+FIT_TOL = 1e-6
+
+
+def overflowing_axes(
+    extents: Iterable[float], build_volume: tuple[float, float, float]
+) -> list[str]:
+    """Names of the axes (``"X"``/``"Y"``/``"Z"``) whose extent overflows
+    *build_volume*, with ``FIT_TOL`` slack so an exact fit is not flagged on
+    bounding-box rounding noise. An empty list means the part fits."""
+    return [
+        axis
+        for axis, extent, limit in zip("XYZ", extents, build_volume, strict=True)
+        if float(extent) > limit + FIT_TOL
+    ]
 
 
 def find_bed_fit(shape: Shape[Any], build_volume: tuple[float, float, float]) -> list[Finding]:
@@ -29,12 +43,7 @@ def find_bed_fit(shape: Shape[Any], build_volume: tuple[float, float, float]) ->
         build_volume: usable build volume as ``(x, y, z)`` in mm.
     """
     size = shape.bounding_box().size
-    extents = (size.X, size.Y, size.Z)
-    over = [
-        axis
-        for axis, extent, limit in zip("XYZ", extents, build_volume, strict=True)
-        if extent > limit + _FIT_TOL
-    ]
+    over = overflowing_axes((size.X, size.Y, size.Z), build_volume)
     if not over:
         return []
     msg = (

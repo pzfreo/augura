@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from augura.bed_fit import overflowing_axes
 from augura.brim import DEFAULT_MAX_ASPECT, DEFAULT_MIN_FOOTPRINT_AREA
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE
 from augura.report import Finding, Report, Severity
@@ -21,7 +22,6 @@ from augura.tip_over import _convex_hull, _inside_hull
 
 _DOWNWARD_TOL = 1e-6
 _BED_TOL = 1e-3
-_FIT_TOL = 1e-6
 _ANGLE_TOL = 1e-3
 _BED_NORMAL_TOL = 0.99
 # Every mesh-path finding carries this marker — results are approximate.
@@ -77,11 +77,7 @@ def find_manifold_issues_mesh(mesh: Any) -> list[Finding]:
 def find_bed_fit_mesh(mesh: Any, build_volume: tuple[float, float, float]) -> list[Finding]:
     """Flag if the mesh bounding-box extents overflow the build volume."""
     extents = mesh.bounds[1] - mesh.bounds[0]  # numpy [dx, dy, dz]
-    over = [
-        axis
-        for axis, extent, limit in zip("XYZ", extents, build_volume, strict=True)
-        if float(extent) > limit + _FIT_TOL
-    ]
+    over = overflowing_axes(extents, build_volume)
     if not over:
         return []
     dx, dy, dz = float(extents[0]), float(extents[1]), float(extents[2])

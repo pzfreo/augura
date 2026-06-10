@@ -14,7 +14,7 @@ from augura.estampo import to_estampo_toml
 from augura.manifold import find_manifold_issues, is_watertight
 from augura.mesh import analyze_mesh
 from augura.min_feature import find_thin_features, min_vertical_feature
-from augura.orientation import OrientationScore, orientation_scores
+from augura.orientation import OrientationScore, apply_orientation, orientation_scores
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Finding, Report, Severity
 from augura.tip_over import find_tip_over
@@ -28,6 +28,7 @@ __all__ = [
     "Severity",
     "analyze",
     "analyze_mesh",
+    "apply_orientation",
     "as_build123d",
     "is_cadquery",
     "find_bed_fit",

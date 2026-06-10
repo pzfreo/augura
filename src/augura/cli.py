@@ -7,8 +7,9 @@ Usage::
 
 ``<file>`` is a STEP (``.step`` / ``.stp``) part — analysed on the exact BREP
 path — or an STL (``.stl``) — loaded as a mesh and analysed on the degraded,
-approximate path. Output is human text by default, or Markdown (``--format md``)
-or JSON (``--format json``).
+approximate path. Output is human text by default, or Markdown (``--format md``),
+JSON (``--format json``), or — for ``analyze`` — an estampo.toml fragment
+(``--format estampo``).
 """
 
 from __future__ import annotations
@@ -20,10 +21,16 @@ from pathlib import Path
 from typing import Any
 
 from augura.analyze import analyze
+from augura.estampo import format_rotation, to_estampo_toml
 from augura.footprint import BED_TOL
 from augura.mesh import is_mesh
 from augura.min_feature import DEFAULT_MIN_FEATURE
-from augura.orientation import OrientationScore, orientation_scores
+from augura.orientation import (
+    OrientationScore,
+    Rotation3,
+    apply_orientation,
+    orientation_scores,
+)
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE
 from augura.report import Report, Severity
 from augura.wall_thickness import DEFAULT_MIN_PERIMETERS, DEFAULT_NOZZLE
@@ -51,11 +58,20 @@ def _md_cell(text: str) -> str:
     return text.replace("|", r"\|").replace("\n", " ")
 
 
-def _render_report(report: Report, source: str, fmt: str) -> str:
+def _render_report(report: Report, source: str, fmt: str, orient: Rotation3 | None = None) -> str:
+    if fmt == "estampo":
+        return to_estampo_toml(report, orient=orient, source=source)
     if fmt == "json":
-        return json.dumps({"source": source, **report.to_dict()}, indent=2)
+        payload: dict[str, Any] = {"source": source}
+        if orient is not None:
+            payload["rotation"] = list(orient)
+        payload.update(report.to_dict())
+        return json.dumps(payload, indent=2)
+    orient_note = f"analysed at rotation {format_rotation(orient)}" if orient is not None else None
     if fmt == "md":
         lines = [f"# augura report - `{source}`", ""]
+        if orient_note:
+            lines += [orient_note, ""]
         if not report.findings:
             return "\n".join([*lines, "No printability issues found."]) + "\n"
         lines += ["| Severity | Check | Detail |", "| --- | --- | --- |"]
@@ -64,9 +80,11 @@ def _render_report(report: Report, source: str, fmt: str) -> str:
         ]
         return "\n".join([*lines, ""]) + "\n"
     # text
-    if not report.findings:
-        return f"augura - {source}\n  No printability issues found."
     lines = [f"augura - {source}"]
+    if orient_note:
+        lines.append(f"  {orient_note}")
+    if not report.findings:
+        return "\n".join([*lines, "  No printability issues found."])
     lines += [f"  [{f.severity.value.upper()}] {f.kind}: {f.message}" for f in report.findings]
     errors = sum(1 for f in report.findings if f.severity is Severity.ERROR)
     warnings = sum(1 for f in report.findings if f.severity is Severity.WARNING)
@@ -74,21 +92,24 @@ def _render_report(report: Report, source: str, fmt: str) -> str:
     return "\n".join(lines)
 
 
+def _fit_note(score: OrientationScore) -> str:
+    return " (exceeds build volume)" if score.fits_build_volume is False else ""
+
+
 def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) -> str:
     if fmt == "json":
-        payload = {
-            "source": source,
-            "orientations": [
-                {
-                    "rotation": list(s.rotation),
-                    "overhang_area": s.overhang_area,
-                    "z_height_mm": s.z_height,
-                    "bed_contact_mm2": s.bed_contact_area,
-                }
-                for s in scores
-            ],
-        }
-        return json.dumps(payload, indent=2)
+        entries = []
+        for s in scores:
+            entry: dict[str, Any] = {
+                "rotation": list(s.rotation),
+                "overhang_area": s.overhang_area,
+                "z_height_mm": s.z_height,
+                "bed_contact_mm2": s.bed_contact_area,
+            }
+            if s.fits_build_volume is not None:
+                entry["fits_build_volume"] = s.fits_build_volume
+            entries.append(entry)
+        return json.dumps({"source": source, "orientations": entries}, indent=2)
     if fmt == "md":
         lines = [
             f"# augura orientations - `{source}`",
@@ -97,7 +118,7 @@ def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) 
             "| --- | --- | --- | --- | --- |",
         ]
         lines += [
-            f"| {i} | {s.rotation} | {s.overhang_area:.1f} | {s.z_height:.1f}"
+            f"| {i} | {s.rotation}{_fit_note(s)} | {s.overhang_area:.1f} | {s.z_height:.1f}"
             f" | {s.bed_contact_area:.0f} |"
             for i, s in enumerate(scores, 1)
         ]
@@ -105,7 +126,7 @@ def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) 
     # text
     lines = [f"augura orientations - {source} (best first)"]
     lines += [
-        f"  {i}. rotation {s.rotation} -> {s.overhang_area:.1f} mm2 overhang, "
+        f"  {i}. rotation {s.rotation}{_fit_note(s)} -> {s.overhang_area:.1f} mm2 overhang, "
         f"{s.z_height:.1f} mm tall, {s.bed_contact_area:.0f} mm2 contact"
         for i, s in enumerate(scores, 1)
     ]
@@ -118,11 +139,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
     an = sub.add_parser("analyze", help="report a part's printability issues")
     an.add_argument("file", type=Path, help="STEP (.step/.stp) or STL (.stl) file")
-    an.add_argument("--format", choices=["text", "md", "json"], default="text")
+    an.add_argument("--format", choices=["text", "md", "json", "estampo"], default="text")
     an.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
     an.add_argument("--nozzle", type=float, default=DEFAULT_NOZZLE)
     an.add_argument("--min-perimeters", type=int, default=DEFAULT_MIN_PERIMETERS)
-    an.add_argument("--build-volume", nargs=3, type=float, metavar=("X", "Y", "Z"), default=None)
+    an.add_argument(
+        "--build-volume",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+        default=None,
+        help="enable the bed-fit check against this volume (mm);"
+        " with --best-orientation, poses that fit it rank first",
+    )
     an.add_argument(
         "--bed-tol",
         type=float,
@@ -138,11 +167,36 @@ def _build_parser() -> argparse.ArgumentParser:
         help="minimum vertical feature size (mm) to flag (default: %(default)s)",
     )
     an.add_argument("--exit-code", action="store_true", help="exit 1 if any ERROR-severity finding")
+    pose = an.add_mutually_exclusive_group()
+    pose.add_argument(
+        "--best-orientation",
+        action="store_true",
+        help="rotate the part to its top-ranked print orientation before analysing"
+        " (with --build-volume, poses that fit rank first); the rotation [X, Y, Z]"
+        " is reported in the output (STEP input only)",
+    )
+    pose.add_argument(
+        "--orient",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+        default=None,
+        help="analyse at this explicit (X, Y, Z) Euler rotation in degrees, e.g. a pose"
+        " chosen from 'augura orientations' (STEP input only)",
+    )
 
     orient = sub.add_parser("orientations", help="rank print orientations by support need")
     orient.add_argument("file", type=Path, help="STEP (.step/.stp) file")
     orient.add_argument("--format", choices=["text", "md", "json"], default="text")
     orient.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
+    orient.add_argument(
+        "--build-volume",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+        default=None,
+        help="rank poses that fit this build volume (mm) first, and mark those that don't",
+    )
     orient.add_argument(
         "--bed-tol",
         type=float,
@@ -153,12 +207,36 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _xyz(values: list[float]) -> tuple[float, float, float]:
+    return (values[0], values[1], values[2])
+
+
 def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
-    build_volume = (
-        (args.build_volume[0], args.build_volume[1], args.build_volume[2])
-        if args.build_volume
-        else None
-    )
+    build_volume = _xyz(args.build_volume) if args.build_volume else None
+    orient: Rotation3 | None = None
+    if args.best_orientation or args.orient is not None:
+        if is_mesh(shape):
+            raise ValueError("--best-orientation/--orient need a STEP/BREP input, not a mesh")
+        if args.orient is not None:
+            orient = _xyz(args.orient)
+        else:
+            best = orientation_scores(
+                shape,
+                support_angle=args.support_angle,
+                bed_tol=args.bed_tol,
+                build_volume=build_volume,
+            )[0]
+            if best.fits_build_volume is False:
+                print(
+                    "augura: no candidate orientation fits the build volume;"
+                    " using the unconstrained best",
+                    file=sys.stderr,
+                )
+            orient = best.rotation
+        # Analyse the part as it will actually print: rotated and dropped onto
+        # the bed (the same pose orientation_scores evaluates), so the report
+        # describes the part at the rotation it emits.
+        shape = apply_orientation(shape, orient)
     report = analyze(
         shape,
         support_angle=args.support_angle,
@@ -168,7 +246,7 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
         bed_tol=args.bed_tol,
         min_feature=args.min_feature,
     )
-    print(_render_report(report, args.file.name, args.format))
+    print(_render_report(report, args.file.name, args.format, orient=orient))
     if args.exit_code and any(f.severity is Severity.ERROR for f in report.findings):
         return 1
     return 0
@@ -176,9 +254,13 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
 
 def _run_orientations(shape: Any, args: argparse.Namespace) -> int:
     if is_mesh(shape):
-        print("augura: orientation search needs a STEP/BREP input, not a mesh", file=sys.stderr)
-        return 2
-    scores = orientation_scores(shape, support_angle=args.support_angle, bed_tol=args.bed_tol)
+        raise ValueError("orientation search needs a STEP/BREP input, not a mesh")
+    scores = orientation_scores(
+        shape,
+        support_angle=args.support_angle,
+        bed_tol=args.bed_tol,
+        build_volume=_xyz(args.build_volume) if args.build_volume else None,
+    )
     print(_render_orientations(scores, args.file.name, args.format))
     return 0
 

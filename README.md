@@ -52,6 +52,17 @@ augura analyze bracket.step
 augura analyze bracket.step --format md
 augura analyze bracket.step --format json
 
+# Analyse at the best print orientation instead of as-imported (works with
+# any --format; the rotation used is reported in the output)
+augura analyze bracket.step --best-orientation
+
+# ... or at a pose you chose yourself, e.g. from `augura orientations`
+augura analyze bracket.step --orient 90 0 0
+
+# estampo.toml fragment (feed into an estampo [[parts]] entry);
+# with --best-orientation it emits orient = [X, Y, Z] for the top-ranked pose
+augura analyze bracket.step --format estampo --best-orientation
+
 # Tune to your printer / job
 augura analyze bracket.step --nozzle 0.6 --min-perimeters 3
 augura analyze bracket.step --build-volume 256 256 256 --support-angle 50
@@ -59,8 +70,9 @@ augura analyze bracket.step --build-volume 256 256 256 --support-angle 50
 # Gate a build: exit non-zero if any ERROR-severity issue (great for CI / pre-slice)
 augura analyze bracket.step --exit-code
 
-# Rank print orientations by how much support each needs (STEP only)
-augura orientations bracket.step --format json
+# Rank print orientations by how much support each needs (STEP only);
+# --build-volume ranks poses that fit first and marks those that don't
+augura orientations bracket.step --format json --build-volume 256 256 256
 ```
 
 `augura analyze` accepts `.step` / `.stp` (exact BREP path) or `.stl` (mesh path).
@@ -89,7 +101,9 @@ augura — bracket.step
 
 | Flag | Meaning |
 |---|---|
-| `--format text\|md\|json` | output format (default `text`) |
+| `--format text\|md\|json\|estampo` | output format (default `text`); `estampo` (analyze only) emits an estampo.toml fragment |
+| `--best-orientation` | rotate to the top-ranked print orientation before analysing (poses that fit `--build-volume` rank first); the rotation is reported in the output (STEP input only) |
+| `--orient X Y Z` | analyse at this explicit Euler rotation (degrees) instead — e.g. a pose chosen from `augura orientations` (STEP input only) |
 | `--support-angle` | overhang threshold, degrees from horizontal (default 45) |
 | `--nozzle` / `--min-perimeters` | wall-thickness limit = `min_perimeters × nozzle` |
 | `--build-volume X Y Z` | enable the bed-fit check against this volume (mm) |
@@ -128,10 +142,12 @@ Individual checks and the orientation search are public too:
 augura.find_overhangs(shape, support_angle=45.0)
 augura.find_thin_walls(shape, nozzle=0.4, min_perimeters=2)
 augura.orientation_scores(shape)        # ranked list[OrientationScore], best first
+augura.apply_orientation(shape, (180, 0, 0))  # pose a shape as a score was ranked
 augura.is_watertight(shape)             # bool
 ```
 
-Top-level surface: `analyze`, `analyze_mesh`, `Report`, `Finding`, `Severity`,
+Top-level surface: `analyze`, `analyze_mesh`, `apply_orientation`, `Report`,
+`Finding`, `Severity`,
 `OrientationScore`, `find_overhangs`, `find_bed_fit`, `find_manifold_issues`,
 `find_tip_over`, `find_brim_risk`, `find_thin_features`, `find_thin_walls`,
 `min_vertical_feature`, `min_wall_thickness`, `is_watertight`,
