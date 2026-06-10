@@ -16,7 +16,7 @@ from typing import Any
 
 from build123d import Pos, Rotation, Shape
 
-from augura.bed_fit import FIT_TOL
+from augura.bed_fit import overflowing_axes
 from augura.cadquery_adapter import as_build123d, is_cadquery
 from augura.footprint import BED_TOL, bed_contact_faces
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
@@ -49,10 +49,9 @@ class OrientationScore:
 
 
 def _pose(shape: Shape[Any], rotation: Rotation3) -> tuple[Shape[Any], Any]:
-    """Rotate then drop onto the bed; also returns the pre-drop bounding box
-    (extents are translation-invariant, so it describes the posed part too)."""
-    if is_cadquery(shape):
-        shape = as_build123d(shape)
+    """Rotate a build123d shape then drop it onto the bed; also returns the
+    pre-drop bounding box (extents are translation-invariant, so it describes
+    the posed part too)."""
     oriented = Rotation(*rotation) * shape
     bb = oriented.bounding_box()
     dropped: Shape[Any] = Pos(0, 0, -bb.min.Z) * oriented
@@ -66,6 +65,8 @@ def apply_orientation(shape: Shape[Any], rotation: Rotation3) -> Shape[Any]:
     ``Rotation`` convention: intrinsic rotations about X, then Y, then Z). The
     rotated part is dropped onto the bed (min Z → 0).
     """
+    if is_cadquery(shape):
+        shape = as_build123d(shape)
     return _pose(shape, rotation)[0]
 
 
@@ -99,12 +100,7 @@ def orientation_scores(
         size = bb.size
         fits: bool | None = None
         if build_volume is not None:
-            # Same slack as find_bed_fit, so the two checks cannot disagree on
-            # an exact fit.
-            fits = all(
-                float(d) <= limit + FIT_TOL
-                for d, limit in zip((size.X, size.Y, size.Z), build_volume, strict=True)
-            )
+            fits = not overflowing_axes((size.X, size.Y, size.Z), build_volume)
         faces = list(oriented.faces())
         area = float(
             sum(

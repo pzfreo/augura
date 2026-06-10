@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from augura.analyze import analyze
-from augura.estampo import to_estampo_toml
+from augura.estampo import format_rotation, to_estampo_toml
 from augura.footprint import BED_TOL
 from augura.mesh import is_mesh
 from augura.min_feature import DEFAULT_MIN_FEATURE
@@ -67,11 +67,7 @@ def _render_report(report: Report, source: str, fmt: str, orient: Rotation3 | No
             payload["rotation"] = list(orient)
         payload.update(report.to_dict())
         return json.dumps(payload, indent=2)
-    orient_note = (
-        f"analysed at rotation [{orient[0]:.10g}, {orient[1]:.10g}, {orient[2]:.10g}]"
-        if orient is not None
-        else None
-    )
+    orient_note = f"analysed at rotation {format_rotation(orient)}" if orient is not None else None
     if fmt == "md":
         lines = [f"# augura report - `{source}`", ""]
         if orient_note:
@@ -147,7 +143,15 @@ def _build_parser() -> argparse.ArgumentParser:
     an.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
     an.add_argument("--nozzle", type=float, default=DEFAULT_NOZZLE)
     an.add_argument("--min-perimeters", type=int, default=DEFAULT_MIN_PERIMETERS)
-    an.add_argument("--build-volume", nargs=3, type=float, metavar=("X", "Y", "Z"), default=None)
+    an.add_argument(
+        "--build-volume",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+        default=None,
+        help="enable the bed-fit check against this volume (mm);"
+        " with --best-orientation, poses that fit it rank first",
+    )
     an.add_argument(
         "--bed-tol",
         type=float,
@@ -203,25 +207,32 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _xyz(values: list[float] | None) -> tuple[float, float, float] | None:
-    return (values[0], values[1], values[2]) if values else None
+def _xyz(values: list[float]) -> tuple[float, float, float]:
+    return (values[0], values[1], values[2])
 
 
 def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
-    build_volume = _xyz(args.build_volume)
+    build_volume = _xyz(args.build_volume) if args.build_volume else None
     orient: Rotation3 | None = None
     if args.best_orientation or args.orient is not None:
         if is_mesh(shape):
             raise ValueError("--best-orientation/--orient need a STEP/BREP input, not a mesh")
         if args.orient is not None:
-            orient = (args.orient[0], args.orient[1], args.orient[2])
+            orient = _xyz(args.orient)
         else:
-            orient = orientation_scores(
+            best = orientation_scores(
                 shape,
                 support_angle=args.support_angle,
                 bed_tol=args.bed_tol,
                 build_volume=build_volume,
-            )[0].rotation
+            )[0]
+            if best.fits_build_volume is False:
+                print(
+                    "augura: no candidate orientation fits the build volume;"
+                    " using the unconstrained best",
+                    file=sys.stderr,
+                )
+            orient = best.rotation
         # Analyse the part as it will actually print: rotated and dropped onto
         # the bed (the same pose orientation_scores evaluates), so the report
         # describes the part at the rotation it emits.
@@ -248,7 +259,7 @@ def _run_orientations(shape: Any, args: argparse.Namespace) -> int:
         shape,
         support_angle=args.support_angle,
         bed_tol=args.bed_tol,
-        build_volume=_xyz(args.build_volume),
+        build_volume=_xyz(args.build_volume) if args.build_volume else None,
     )
     print(_render_orientations(scores, args.file.name, args.format))
     return 0

@@ -9,6 +9,17 @@ from __future__ import annotations
 from augura.report import Report
 
 
+def format_rotation(rotation: tuple[float, float, float]) -> str:
+    """Render an ``(X, Y, Z)`` rotation in degrees as ``[X, Y, Z]``.
+
+    ``.10g`` keeps axis angles clean ("180", not "180.0") without rounding
+    away the precision the part was actually analysed at. The CLI report and
+    the estampo fragment both use this, so they always show the same value.
+    """
+    x, y, z = rotation
+    return f"[{x:.10g}, {y:.10g}, {z:.10g}]"
+
+
 def to_estampo_toml(
     report: Report,
     *,
@@ -45,10 +56,7 @@ def to_estampo_toml(
     ]
 
     if orient is not None:
-        x, y, z = orient
-        # .10g keeps axis angles clean ("180", not "180.0") without rounding
-        # away the precision the part was actually analysed at.
-        lines.append(f"orient = [{x:.10g}, {y:.10g}, {z:.10g}]")
+        lines.append(f"orient = {format_rotation(orient)}")
 
     lines.append(f"enable_support = {str(bool(report.overhangs)).lower()}")
     brim_type = "brim" if report.brim else "no_brim"

@@ -153,6 +153,19 @@ def test_best_orientation_prefers_pose_that_fits(
     assert "exceeds build volume" not in out  # the chosen pose does
 
 
+def test_best_orientation_nothing_fits_warns(
+    tall_t: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No pose of the tall T fits a 20 mm cube: the fallback to the
+    # unconstrained best must be announced, not silent.
+    cmd = ["analyze", str(tall_t), "--format", "estampo", "--best-orientation"]
+    assert main([*cmd, "--build-volume", "20", "20", "20"]) == 0
+    captured = capsys.readouterr()
+    assert "no candidate orientation fits" in captured.err
+    assert "orient = [180, 0, 0]" in captured.out  # unconstrained best
+    assert "exceeds build volume" in captured.out  # advisory in the fragment
+
+
 def test_orientations_build_volume(tall_t: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # The orientations frontier must rank with the same feasibility-first key
     # --best-orientation uses, and say which poses fit.
