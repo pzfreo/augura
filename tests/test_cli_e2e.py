@@ -88,11 +88,34 @@ def test_analyze_estampo_best_orientation(
     assert "enable_support = false" in out
 
 
-def test_best_orientation_requires_estampo(
+def test_best_orientation_text_json_md(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # Same upside-down T: every format must report the flip and the flipped
+    # part's (clean) findings.
+    path = tmp_path / "upside_down_t.step"
+    export_step(Box(5, 5, 10) + Pos(0, 0, 7.5) * Box(20, 20, 5), path)
+    base = ["analyze", str(path), "--best-orientation"]
+
+    assert main(base) == 0  # text is the default
+    out = capsys.readouterr().out
+    assert "rotated to best print orientation [180, 0, 0]" in out
+    assert "No printability issues found" in out
+
+    assert main([*base, "--format", "json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["orientation"] == [180, 0, 0]
+    assert data["findings"] == []
+
+    assert main([*base, "--format", "md"]) == 0
+    out = capsys.readouterr().out
+    assert "rotated to best print orientation [180, 0, 0]" in out
+    assert "No printability issues found" in out
+
+
+def test_json_without_best_orientation_has_no_orientation_key(
     step_box: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["analyze", str(step_box), "--best-orientation"]) == 2
-    assert "requires --format estampo" in capsys.readouterr().err
+    assert main(["analyze", str(step_box), "--format", "json"]) == 0
+    assert "orientation" not in json.loads(capsys.readouterr().out)
 
 
 def test_best_orientation_rejects_mesh(stl_box: Path, capsys: pytest.CaptureFixture[str]) -> None:

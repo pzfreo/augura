@@ -61,9 +61,19 @@ def _render_report(
     if fmt == "estampo":
         return to_estampo_toml(report, orient=orient)
     if fmt == "json":
-        return json.dumps({"source": source, **report.to_dict()}, indent=2)
+        payload: dict[str, Any] = {"source": source}
+        if orient is not None:
+            payload["orientation"] = list(orient)
+        return json.dumps({**payload, **report.to_dict()}, indent=2)
+    orient_note = (
+        f"rotated to best print orientation [{orient[0]:g}, {orient[1]:g}, {orient[2]:g}]"
+        if orient is not None
+        else None
+    )
     if fmt == "md":
         lines = [f"# augura report - `{source}`", ""]
+        if orient_note:
+            lines += [orient_note, ""]
         if not report.findings:
             return "\n".join([*lines, "No printability issues found."]) + "\n"
         lines += ["| Severity | Check | Detail |", "| --- | --- | --- |"]
@@ -72,9 +82,11 @@ def _render_report(
         ]
         return "\n".join([*lines, ""]) + "\n"
     # text
-    if not report.findings:
-        return f"augura - {source}\n  No printability issues found."
     lines = [f"augura - {source}"]
+    if orient_note:
+        lines.append(f"  {orient_note}")
+    if not report.findings:
+        return "\n".join([*lines, "  No printability issues found."])
     lines += [f"  [{f.severity.value.upper()}] {f.kind}: {f.message}" for f in report.findings]
     errors = sum(1 for f in report.findings if f.severity is Severity.ERROR)
     warnings = sum(1 for f in report.findings if f.severity is Severity.WARNING)
@@ -149,8 +161,8 @@ def _build_parser() -> argparse.ArgumentParser:
     an.add_argument(
         "--best-orientation",
         action="store_true",
-        help="rotate the part to its top-ranked print orientation before analysing and"
-        " emit it as orient = [X, Y, Z]; requires --format estampo and a STEP input",
+        help="rotate the part to its top-ranked print orientation before analysing;"
+        " the rotation [X, Y, Z] is reported in the output (STEP input only)",
     )
 
     orient = sub.add_parser("orientations", help="rank print orientations by support need")
@@ -175,9 +187,6 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
     )
     orient: tuple[float, float, float] | None = None
     if args.best_orientation:
-        if args.format != "estampo":
-            print("augura: --best-orientation requires --format estampo", file=sys.stderr)
-            return 2
         if is_mesh(shape):
             print(
                 "augura: --best-orientation needs a STEP/BREP input, not a mesh",
@@ -187,8 +196,8 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
         best = orientation_scores(shape, support_angle=args.support_angle, bed_tol=args.bed_tol)[0]
         orient = best.rotation
         # Analyse the part as it will actually print: rotated and dropped onto
-        # the bed (same transform orientation_scores used to rank it), so
-        # enable_support / brim_type are consistent with the emitted orient.
+        # the bed (same transform orientation_scores used to rank it), so the
+        # report describes the part at the orientation it emits.
         shape = Rotation(*orient) * shape
         shape = Pos(0, 0, -shape.bounding_box().min.Z) * shape
     report = analyze(
