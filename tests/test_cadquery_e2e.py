@@ -32,17 +32,17 @@ def _make_mock_cq_shape(topo_ds: Any) -> Any:
     return _MockCQShape(topo_ds)
 
 
-def _make_mock_cq_workplane(topo_ds: Any, *, count: int = 1) -> Any:
-    """A cadquery.Workplane-like object with *count* val(s)."""
+def _make_mock_cq_workplane(*topo_ds: Any) -> Any:
+    """A cadquery.Workplane-like object stacking the given TopoDS shape(s)."""
 
-    mock_shape = _make_mock_cq_shape(topo_ds)
+    mock_shapes = [_make_mock_cq_shape(t) for t in topo_ds]
 
     class _MockCQWorkplane:
         def val(self) -> Any:
-            return mock_shape
+            return mock_shapes[0]
 
         def vals(self) -> list[Any]:
-            return [mock_shape] * count
+            return list(mock_shapes)
 
     _MockCQWorkplane.__module__ = "cadquery"
     return _MockCQWorkplane()
@@ -95,15 +95,19 @@ def test_as_build123d_preserves_geometry() -> None:
 
 
 def test_as_build123d_from_workplane_single() -> None:
-    wp = _make_mock_cq_workplane(_TOPO_DS, count=1)
+    wp = _make_mock_cq_workplane(_TOPO_DS)
     result = as_build123d(wp)
     assert isinstance(result, B3dShape)
 
 
-def test_as_build123d_from_workplane_multiple_raises() -> None:
-    wp = _make_mock_cq_workplane(_TOPO_DS, count=3)
-    with pytest.raises(ValueError, match="3 objects"):
-        as_build123d(wp)
+def test_as_build123d_from_workplane_multiple_combines() -> None:
+    """A multi-solid Workplane stack (e.g. print-in-place) becomes one compound."""
+    wp = _make_mock_cq_workplane(
+        Box(10, 10, 5).wrapped, Box(8, 8, 4).wrapped, Box(6, 6, 3).wrapped
+    )
+    result = as_build123d(wp)
+    assert isinstance(result, B3dShape)
+    assert len(result.solids()) == 3
 
 
 def test_as_build123d_from_workplane_empty_raises() -> None:
@@ -186,8 +190,9 @@ def test_as_build123d_solid_with_stray_face_raises() -> None:
         as_build123d(mock)
 
 
-def test_as_build123d_multi_solid_compound_raises() -> None:
-    """A multi-body compound passed as a direct Shape (not Workplane) is rejected."""
+def test_as_build123d_multi_solid_compound_accepted() -> None:
+    """A multi-body compound (e.g. print-in-place hinge) is analysed as one part,
+    matching the native build123d path."""
     from OCP.BRep import BRep_Builder
     from OCP.TopoDS import TopoDS_Compound
 
@@ -198,8 +203,8 @@ def test_as_build123d_multi_solid_compound_raises() -> None:
     builder.Add(compound, Box(3, 3, 3).wrapped)
 
     mock = _make_mock_cq_shape(compound)
-    with pytest.raises(ValueError, match="2 solids"):
-        as_build123d(mock)
+    result = as_build123d(mock)
+    assert len(result.solids()) == 2
 
 
 # ---------------------------------------------------------------------------
