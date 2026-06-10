@@ -47,7 +47,7 @@ def _topo(cq_obj: Any) -> TopoDS_Shape:
     return cq_obj.wrapped
 
 
-def as_build123d(cq_obj: Any) -> Shape:
+def as_build123d(cq_obj: Any) -> Shape[Any]:
     """Wrap a CadQuery ``Solid`` / ``Shape`` / ``Workplane`` as a build123d Shape.
 
     The underlying ``TopoDS_Shape`` is shared — no geometry copy.
@@ -87,15 +87,12 @@ def as_build123d(cq_obj: Any) -> Shape:
     if isinstance(result, Compound):
         solids = result.solids()
         if len(solids) == 0:
-            raise TypeError(
-                "CadQuery input contains no solids; augura analyses solid bodies"
-            )
+            raise TypeError("CadQuery input contains no solids; augura analyses solid bodies")
         # A compound mixing solids with free faces/shells would silently
         # corrupt area-based findings — every face must belong to a solid.
         if len(result.faces()) != sum(len(s.faces()) for s in solids):
             raise TypeError(
-                "CadQuery input mixes solids with stray non-solid geometry; "
-                "pass the solids alone"
+                "CadQuery input mixes solids with stray non-solid geometry; pass the solids alone"
             )
     elif not isinstance(result, Solid):
         raise TypeError(

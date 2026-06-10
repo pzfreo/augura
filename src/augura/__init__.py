@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from augura.analyze import analyze
 from augura.bed_fit import find_bed_fit
+from augura.brim import find_brim_risk
 from augura.cadquery_adapter import as_build123d, is_cadquery
 from augura.estampo import to_estampo_toml
-from augura.brim import find_brim_risk
 from augura.manifold import find_manifold_issues, is_watertight
 from augura.mesh import analyze_mesh
 from augura.min_feature import find_thin_features, min_vertical_feature

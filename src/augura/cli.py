@@ -97,7 +97,8 @@ def _render_orientations(scores: list[OrientationScore], source: str, fmt: str) 
             "| --- | --- | --- | --- | --- |",
         ]
         lines += [
-            f"| {i} | {s.rotation} | {s.overhang_area:.1f} | {s.z_height:.1f} | {s.bed_contact_area:.0f} |"
+            f"| {i} | {s.rotation} | {s.overhang_area:.1f} | {s.z_height:.1f}"
+            f" | {s.bed_contact_area:.0f} |"
             for i, s in enumerate(scores, 1)
         ]
         return "\n".join([*lines, ""]) + "\n"
@@ -123,11 +124,17 @@ def _build_parser() -> argparse.ArgumentParser:
     an.add_argument("--min-perimeters", type=int, default=DEFAULT_MIN_PERIMETERS)
     an.add_argument("--build-volume", nargs=3, type=float, metavar=("X", "Y", "Z"), default=None)
     an.add_argument(
-        "--bed-tol", type=float, default=BED_TOL, metavar="MM",
+        "--bed-tol",
+        type=float,
+        default=BED_TOL,
+        metavar="MM",
         help="Z tolerance (mm) for identifying bed-contact faces (default: %(default)s)",
     )
     an.add_argument(
-        "--min-feature", type=float, default=DEFAULT_MIN_FEATURE, metavar="MM",
+        "--min-feature",
+        type=float,
+        default=DEFAULT_MIN_FEATURE,
+        metavar="MM",
         help="minimum vertical feature size (mm) to flag (default: %(default)s)",
     )
     an.add_argument("--exit-code", action="store_true", help="exit 1 if any ERROR-severity finding")
@@ -137,7 +144,10 @@ def _build_parser() -> argparse.ArgumentParser:
     orient.add_argument("--format", choices=["text", "md", "json"], default="text")
     orient.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
     orient.add_argument(
-        "--bed-tol", type=float, default=BED_TOL, metavar="MM",
+        "--bed-tol",
+        type=float,
+        default=BED_TOL,
+        metavar="MM",
         help="Z tolerance (mm) for identifying bed-contact faces (default: %(default)s)",
     )
     return parser

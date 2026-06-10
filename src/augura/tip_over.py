@@ -62,7 +62,9 @@ def find_tip_over(shape: Shape[Any], *, bed_tol: float = BED_TOL) -> list[Findin
     parts that rest on tilted faces, edges, or points abstain (no finding).
     """
     points: list[Point] = [
-        (vertex.X, vertex.Y) for face in bed_contact_faces(shape, bed_tol=bed_tol) for vertex in face.vertices()
+        (vertex.X, vertex.Y)
+        for face in bed_contact_faces(shape, bed_tol=bed_tol)
+        for vertex in face.vertices()
     ]
     hull = _convex_hull(points)
     if len(hull) < 3:

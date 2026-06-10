@@ -40,8 +40,8 @@ packages = ["src/augura"]
 dev = [
     "pytest",
     "pytest-cov>=7.1.0",
-    "mypy",
-    "ruff",
+    "mypy==2.1.0",
+    "ruff==0.15.16",
 ]
 
 [tool.ruff]

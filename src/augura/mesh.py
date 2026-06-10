@@ -74,9 +74,7 @@ def find_manifold_issues_mesh(mesh: Any) -> list[Finding]:
     ]
 
 
-def find_bed_fit_mesh(
-    mesh: Any, build_volume: tuple[float, float, float]
-) -> list[Finding]:
+def find_bed_fit_mesh(mesh: Any, build_volume: tuple[float, float, float]) -> list[Finding]:
     """Flag if the mesh bounding-box extents overflow the build volume."""
     extents = mesh.bounds[1] - mesh.bounds[0]  # numpy [dx, dy, dz]
     over = [
@@ -111,9 +109,7 @@ def find_tip_over_mesh(
     """Flag instability: COM projects outside the XY convex hull of bed vertices."""
     _bed = bed_indices if bed_indices is not None else _bed_contact_tri_indices(mesh, bed_tol)
     points: list[tuple[float, float]] = [
-        (float(v[0]), float(v[1]))
-        for i in _bed
-        for v in mesh.triangles[i]
+        (float(v[0]), float(v[1])) for i in _bed for v in mesh.triangles[i]
     ]
     hull = _convex_hull(points)
     if len(hull) < 3:

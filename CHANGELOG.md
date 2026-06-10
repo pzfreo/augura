@@ -3,6 +3,24 @@
 All notable changes to augura are documented here. Versions follow PEP 440;
 between releases `pyproject.toml` carries a `.devN` suffix.
 
+## 0.1.2
+
+- **CadQuery input**: `analyze` and `orientation_scores` accept CadQuery
+  `Workplane`/`Shape` objects directly via the shared OCCT kernel
+  (`as_build123d`, `is_cadquery`); multi-body (print-in-place) inputs are
+  accepted as compounds.
+- **estampo output adapter**: `to_estampo_toml(report)` emits an
+  `estampo.toml` fragment (pure data transform — no estampo import).
+- **Manifold check fixed**: degenerated edges (cone apexes, sphere poles) were
+  counted as non-manifold, so plain `Sphere`/`Cone` solids — and most imported
+  real-world STEP parts — were reported "not watertight" at ERROR severity.
+  The check now uses OCCT's `BRepCheck_Shell` closed-status per shell, and a
+  shape containing no solid body gets a distinct "no solid body" finding.
+- **Real-world STEP regression fixtures**: Framework Expansion Card
+  (multi-body) and CUBOTino cover, both CC-BY-4.0, exercised by the full
+  import → analyze pipeline in CI.
+- Tooling: ruff pinned and the codebase reformatted to it.
+
 ## 0.1.1
 
 - **CLI** (`augura` command): `augura analyze <file>` and `augura orientations

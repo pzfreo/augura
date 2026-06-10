@@ -22,7 +22,7 @@ def bed_contact_faces(
     """Return the planar faces lying in the part's bed plane (its lowest Z)."""
     z_min = shape.bounding_box().min.Z
     result: list[Face] = []
-    for face in (faces if faces is not None else shape.faces()):
+    for face in faces if faces is not None else shape.faces():
         box = face.bounding_box()
         if abs(box.min.Z - z_min) < bed_tol and abs(box.max.Z - z_min) < bed_tol:
             result.append(face)

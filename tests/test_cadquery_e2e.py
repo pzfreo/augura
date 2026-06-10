@@ -16,10 +16,10 @@ from build123d import Shape as B3dShape
 from augura import analyze, as_build123d, is_cadquery, orientation_scores
 from augura.cadquery_adapter import as_build123d as _as_build123d
 
-
 # ---------------------------------------------------------------------------
 # Helpers: mock CadQuery objects backed by a real OCCT/TopoDS_Shape
 # ---------------------------------------------------------------------------
+
 
 def _make_mock_cq_shape(topo_ds: Any) -> Any:
     """A cadquery.Shape-like object wrapping a real TopoDS_Shape."""
@@ -57,6 +57,7 @@ _TOPO_DS = _B3D_BOX.wrapped
 # is_cadquery duck-type detection
 # ---------------------------------------------------------------------------
 
+
 def test_is_cadquery_false_for_b3d_shape() -> None:
     assert not is_cadquery(Box(10, 10, 5))
 
@@ -79,6 +80,7 @@ def test_is_cadquery_true_for_mock_cq_workplane() -> None:
 # as_build123d conversion
 # ---------------------------------------------------------------------------
 
+
 def test_as_build123d_from_cq_shape() -> None:
     mock = _make_mock_cq_shape(_TOPO_DS)
     result = as_build123d(mock)
@@ -89,9 +91,9 @@ def test_as_build123d_preserves_geometry() -> None:
     mock = _make_mock_cq_shape(_TOPO_DS)
     result = as_build123d(mock)
     bb = result.bounding_box()
-    assert bb.size.X == pytest.approx(10.0, abs=1e-3)
-    assert bb.size.Y == pytest.approx(10.0, abs=1e-3)
-    assert bb.size.Z == pytest.approx(5.0, abs=1e-3)
+    assert pytest.approx(10.0, abs=1e-3) == bb.size.X
+    assert pytest.approx(10.0, abs=1e-3) == bb.size.Y
+    assert pytest.approx(5.0, abs=1e-3) == bb.size.Z
 
 
 def test_as_build123d_from_workplane_single() -> None:
@@ -102,9 +104,7 @@ def test_as_build123d_from_workplane_single() -> None:
 
 def test_as_build123d_from_workplane_multiple_combines() -> None:
     """A multi-solid Workplane stack (e.g. print-in-place) becomes one compound."""
-    wp = _make_mock_cq_workplane(
-        Box(10, 10, 5).wrapped, Box(8, 8, 4).wrapped, Box(6, 6, 3).wrapped
-    )
+    wp = _make_mock_cq_workplane(Box(10, 10, 5).wrapped, Box(8, 8, 4).wrapped, Box(6, 6, 3).wrapped)
     result = as_build123d(wp)
     assert isinstance(result, B3dShape)
     assert len(result.solids()) == 3
@@ -171,7 +171,7 @@ def test_analyze_assembly_like_raises_clearly() -> None:
     _MockAssembly.__module__ = "cadquery.assembly"
     assert is_cadquery(_MockAssembly())
     with pytest.raises(TypeError, match="Assembly, flatten"):
-        analyze(_MockAssembly())
+        analyze(_MockAssembly())  # type: ignore[arg-type]
 
 
 def test_as_build123d_solid_with_stray_face_raises() -> None:
@@ -211,6 +211,7 @@ def test_as_build123d_multi_solid_compound_accepted() -> None:
 # analyze() dispatch
 # ---------------------------------------------------------------------------
 
+
 def test_analyze_routes_cq_shape_through_brep() -> None:
     mock = _make_mock_cq_shape(_TOPO_DS)
     report = analyze(mock)
@@ -245,6 +246,7 @@ def test_orientation_scores_accepts_cq_shape() -> None:
 # ---------------------------------------------------------------------------
 # Full e2e with real CadQuery (skipped if not installed)
 # ---------------------------------------------------------------------------
+
 
 def test_e2e_real_cadquery_box() -> None:  # pragma: no cover
     cq = pytest.importorskip("cadquery")

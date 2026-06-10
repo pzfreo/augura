@@ -15,7 +15,9 @@ def _brim() -> Finding:
 
 
 def _min_feature() -> Finding:
-    return Finding(kind="min_feature", severity=Severity.WARNING, message="0.2 mm caps layer height")
+    return Finding(
+        kind="min_feature", severity=Severity.WARNING, message="0.2 mm caps layer height"
+    )
 
 
 def _not_manifold() -> Finding:
@@ -32,6 +34,7 @@ def _tip_over() -> Finding:
 
 # --- clean report ---
 
+
 def test_clean_report() -> None:
     result = to_estampo_toml(Report())
     assert result == (
@@ -44,6 +47,7 @@ def test_clean_report() -> None:
 
 
 # --- individual findings ---
+
 
 def test_enable_support_true_when_overhang() -> None:
     result = to_estampo_toml(Report(findings=(_overhang(),)))
@@ -66,6 +70,7 @@ def test_brim_type_no_brim_when_no_brim_finding() -> None:
 
 
 # --- slicer.overrides section ---
+
 
 def test_no_overrides_section_when_clean() -> None:
     result = to_estampo_toml(Report())
@@ -98,6 +103,7 @@ def test_overrides_section_for_tip_over() -> None:
 
 # --- orient parameter ---
 
+
 def test_orient_omitted_when_none() -> None:
     result = to_estampo_toml(Report())
     assert "orient" not in result
@@ -114,6 +120,7 @@ def test_orient_appears_before_enable_support() -> None:
 
 
 # --- golden full output ---
+
 
 def test_golden_full_report() -> None:
     report = Report(findings=(_overhang(), _brim(), _min_feature()))
@@ -133,8 +140,10 @@ def test_golden_full_report() -> None:
 
 # --- no estampo import ---
 
+
 def test_no_estampo_runtime_import() -> None:
     import sys
-    assert not any(
-        mod.startswith("estampo") for mod in sys.modules
-    ), "augura.estampo must not import estampo at runtime"
+
+    assert not any(mod.startswith("estampo") for mod in sys.modules), (
+        "augura.estampo must not import estampo at runtime"
+    )

@@ -43,7 +43,8 @@ def to_estampo_toml(
         lines.append(f"orient = [{x:g}, {y:g}, {z:g}]")
 
     lines.append(f"enable_support = {str(bool(report.overhangs)).lower()}")
-    lines.append(f'brim_type = {"\"brim\"" if report.brim else "\"no_brim\""}')
+    brim_type = "brim" if report.brim else "no_brim"
+    lines.append(f'brim_type = "{brim_type}"')
 
     # Advisory [slicer.overrides] section — only emit when there is something
     # to say so that a clean report produces a minimal fragment.
