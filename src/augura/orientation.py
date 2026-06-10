@@ -16,6 +16,7 @@ from typing import Any
 
 from build123d import Pos, Rotation, Shape
 
+from augura.cadquery_adapter import as_build123d, is_cadquery
 from augura.footprint import BED_TOL, bed_contact_faces
 from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
 
@@ -56,6 +57,8 @@ def orientation_scores(
     Each candidate is an ``(X, Y, Z)`` Euler rotation in degrees; the rotated
     part is dropped onto the bed (min Z → 0) before evaluation.
     """
+    if is_cadquery(shape):
+        shape = as_build123d(shape)
     rotations = _AXIS_ORIENTATIONS if candidates is None else candidates
     scores: list[OrientationScore] = []
     for rotation in rotations:

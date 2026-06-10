@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from build123d import Compound, Shape
+from build123d import Compound, Shape, Solid
 
 
 def is_cadquery(obj: Any) -> bool:
@@ -44,20 +44,20 @@ def as_build123d(cq_obj: Any) -> Shape:
         the same OCCT kernel object.
 
     Raises:
-        TypeError: If *cq_obj* is not a recognised CadQuery type.
-        ValueError: If a ``Workplane`` contains more than one solid. Select a
-            single result first (e.g. ``wp.val()``) before passing to
-            ``as_build123d``.
+        TypeError: If *cq_obj* is not a recognised CadQuery type, or wraps
+            non-solid topology (a face, shell, wire, or edge).
+        ValueError: If the input contains more than one solid (multi-object
+            ``Workplane`` or multi-body compound) — analyse one part at a time.
     """
-    # Workplane: unwrap to cadquery.Shape via .val() / .vals()
+    # Workplane: unwrap to cadquery.Shape via .vals()
     if hasattr(cq_obj, "vals") and callable(cq_obj.vals):
         vals = cq_obj.vals()
         if len(vals) == 0:
             raise ValueError("CadQuery Workplane is empty — nothing to analyse")
         if len(vals) > 1:
             raise ValueError(
-                f"CadQuery Workplane contains {len(vals)} solids; "
-                "select one before calling as_build123d() (e.g. wp.val())"
+                f"CadQuery Workplane contains {len(vals)} objects; "
+                "analyse one part at a time"
             )
         cq_obj = vals[0]
 
@@ -67,4 +67,25 @@ def as_build123d(cq_obj: Any) -> Shape:
             "expected a cadquery.Shape subclass or Workplane"
         )
 
-    return Compound.cast(cq_obj.wrapped)
+    result = Compound.cast(cq_obj.wrapped)
+
+    # The downstream checks (tip-over COM, manifold, wall thickness) only make
+    # sense for solid bodies — reject faces/shells/wires up front, and refuse
+    # multi-body compounds rather than silently analysing them as one part.
+    if isinstance(result, Compound):
+        n_solids = len(result.solids())
+        if n_solids == 0:
+            raise TypeError(
+                "CadQuery input contains no solids; augura analyses solid bodies"
+            )
+        if n_solids > 1:
+            raise ValueError(
+                f"CadQuery input contains {n_solids} solids; analyse one part at a time"
+            )
+    elif not isinstance(result, Solid):
+        raise TypeError(
+            f"CadQuery input is a {type(result).__name__}, not a solid; "
+            "augura analyses solid bodies"
+        )
+
+    return result

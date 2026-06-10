@@ -13,7 +13,7 @@ import pytest
 from build123d import Box
 from build123d import Shape as B3dShape
 
-from augura import analyze, as_build123d, is_cadquery
+from augura import analyze, as_build123d, is_cadquery, orientation_scores
 from augura.cadquery_adapter import as_build123d as _as_build123d
 
 
@@ -102,7 +102,7 @@ def test_as_build123d_from_workplane_single() -> None:
 
 def test_as_build123d_from_workplane_multiple_raises() -> None:
     wp = _make_mock_cq_workplane(_TOPO_DS, count=3)
-    with pytest.raises(ValueError, match="3 solids"):
+    with pytest.raises(ValueError, match="3 objects"):
         as_build123d(wp)
 
 
@@ -125,6 +125,37 @@ def test_as_build123d_bad_type_raises() -> None:
         _as_build123d(_NotWrapped())
 
 
+def test_as_build123d_shell_raises() -> None:
+    """Non-solid topology (a shell) is rejected, not silently analysed."""
+    shell_topo = _B3D_BOX.shells()[0].wrapped
+    mock = _make_mock_cq_shape(shell_topo)
+    with pytest.raises(TypeError, match="not a solid"):
+        as_build123d(mock)
+
+
+def test_as_build123d_face_raises() -> None:
+    face_topo = _B3D_BOX.faces()[0].wrapped
+    mock = _make_mock_cq_shape(face_topo)
+    with pytest.raises(TypeError, match="not a solid"):
+        as_build123d(mock)
+
+
+def test_as_build123d_multi_solid_compound_raises() -> None:
+    """A multi-body compound passed as a direct Shape (not Workplane) is rejected."""
+    from OCP.BRep import BRep_Builder
+    from OCP.TopoDS import TopoDS_Compound
+
+    builder = BRep_Builder()
+    compound = TopoDS_Compound()
+    builder.MakeCompound(compound)
+    builder.Add(compound, Box(5, 5, 5).wrapped)
+    builder.Add(compound, Box(3, 3, 3).wrapped)
+
+    mock = _make_mock_cq_shape(compound)
+    with pytest.raises(ValueError, match="2 solids"):
+        as_build123d(mock)
+
+
 # ---------------------------------------------------------------------------
 # analyze() dispatch
 # ---------------------------------------------------------------------------
@@ -138,11 +169,26 @@ def test_analyze_routes_cq_shape_through_brep() -> None:
 
 
 def test_analyze_cq_and_b3d_same_findings() -> None:
-    """CadQuery adapter produces identical findings to the build123d path."""
-    mock = _make_mock_cq_shape(_TOPO_DS)
+    """CadQuery adapter produces identical findings to the build123d path.
+
+    The mock wraps an independently constructed box (a distinct TopoDS object
+    with the same dimensions) so the two paths genuinely diverge — a
+    regression in the adapter would not corrupt both sides identically.
+    """
+    independent_box = Box(10, 10, 5)
+    assert independent_box.wrapped is not _TOPO_DS
+    mock = _make_mock_cq_shape(independent_box.wrapped)
     cq_report = analyze(mock)
     b3d_report = analyze(_B3D_BOX)
     assert cq_report.findings == b3d_report.findings
+
+
+def test_orientation_scores_accepts_cq_shape() -> None:
+    """orientation_scores converts CadQuery input like analyze does."""
+    mock = _make_mock_cq_shape(_TOPO_DS)
+    cq_scores = orientation_scores(mock)
+    b3d_scores = orientation_scores(_B3D_BOX)
+    assert [s.rotation for s in cq_scores] == [s.rotation for s in b3d_scores]
 
 
 # ---------------------------------------------------------------------------
