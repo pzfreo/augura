@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from build123d import Pos, Rotation
+
 from augura.analyze import analyze
 from augura.estampo import to_estampo_toml
 from augura.footprint import BED_TOL
@@ -53,9 +55,11 @@ def _md_cell(text: str) -> str:
     return text.replace("|", r"\|").replace("\n", " ")
 
 
-def _render_report(report: Report, source: str, fmt: str) -> str:
+def _render_report(
+    report: Report, source: str, fmt: str, orient: tuple[float, float, float] | None = None
+) -> str:
     if fmt == "estampo":
-        return to_estampo_toml(report)
+        return to_estampo_toml(report, orient=orient)
     if fmt == "json":
         return json.dumps({"source": source, **report.to_dict()}, indent=2)
     if fmt == "md":
@@ -142,6 +146,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="minimum vertical feature size (mm) to flag (default: %(default)s)",
     )
     an.add_argument("--exit-code", action="store_true", help="exit 1 if any ERROR-severity finding")
+    an.add_argument(
+        "--best-orientation",
+        action="store_true",
+        help="rotate the part to its top-ranked print orientation before analysing and"
+        " emit it as orient = [X, Y, Z]; requires --format estampo and a STEP input",
+    )
 
     orient = sub.add_parser("orientations", help="rank print orientations by support need")
     orient.add_argument("file", type=Path, help="STEP (.step/.stp) file")
@@ -163,6 +173,24 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
         if args.build_volume
         else None
     )
+    orient: tuple[float, float, float] | None = None
+    if args.best_orientation:
+        if args.format != "estampo":
+            print("augura: --best-orientation requires --format estampo", file=sys.stderr)
+            return 2
+        if is_mesh(shape):
+            print(
+                "augura: --best-orientation needs a STEP/BREP input, not a mesh",
+                file=sys.stderr,
+            )
+            return 2
+        best = orientation_scores(shape, support_angle=args.support_angle, bed_tol=args.bed_tol)[0]
+        orient = best.rotation
+        # Analyse the part as it will actually print: rotated and dropped onto
+        # the bed (same transform orientation_scores used to rank it), so
+        # enable_support / brim_type are consistent with the emitted orient.
+        shape = Rotation(*orient) * shape
+        shape = Pos(0, 0, -shape.bounding_box().min.Z) * shape
     report = analyze(
         shape,
         support_angle=args.support_angle,
@@ -172,7 +200,7 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
         bed_tol=args.bed_tol,
         min_feature=args.min_feature,
     )
-    print(_render_report(report, args.file.name, args.format))
+    print(_render_report(report, args.file.name, args.format, orient=orient))
     if args.exit_code and any(f.severity is Severity.ERROR for f in report.findings):
         return 1
     return 0

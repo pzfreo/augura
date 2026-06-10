@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from build123d import Box, export_step, export_stl
+from build123d import Box, Pos, export_step, export_stl
 
 from augura.cli import main
 
@@ -67,6 +67,38 @@ def test_analyze_estampo_with_findings(step_box: Path, capsys: pytest.CaptureFix
     out = capsys.readouterr().out
     assert "[slicer.overrides]" in out
     assert "exceeds build volume" in out
+
+
+def test_analyze_estampo_best_orientation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An upside-down T: the plate's underside ring overhangs as imported, and
+    # flipping 180 deg (plate on the bed) is the only candidate with none.
+    path = tmp_path / "upside_down_t.step"
+    export_step(Box(5, 5, 10) + Pos(0, 0, 7.5) * Box(20, 20, 5), path)
+
+    base = ["analyze", str(path), "--format", "estampo"]
+    assert main(base) == 0
+    assert "enable_support = true" in capsys.readouterr().out  # as imported
+
+    assert main([*base, "--best-orientation"]) == 0
+    out = capsys.readouterr().out
+    # The fragment must emit the flip AND describe the flipped part.
+    assert "orient = [180, 0, 0]" in out
+    assert "enable_support = false" in out
+
+
+def test_best_orientation_requires_estampo(
+    step_box: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["analyze", str(step_box), "--best-orientation"]) == 2
+    assert "requires --format estampo" in capsys.readouterr().err
+
+
+def test_best_orientation_rejects_mesh(stl_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    cmd = ["analyze", str(stl_box), "--format", "estampo", "--best-orientation"]
+    assert main(cmd) == 2
+    assert "mesh" in capsys.readouterr().err
 
 
 def test_exit_code_on_error(step_box: Path) -> None:

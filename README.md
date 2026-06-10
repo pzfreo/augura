@@ -52,8 +52,9 @@ augura analyze bracket.step
 augura analyze bracket.step --format md
 augura analyze bracket.step --format json
 
-# estampo.toml fragment (feed into an estampo [[parts]] entry)
-augura analyze bracket.step --format estampo
+# estampo.toml fragment (feed into an estampo [[parts]] entry);
+# --best-orientation also emits orient = [X, Y, Z] for the top-ranked pose
+augura analyze bracket.step --format estampo --best-orientation
 
 # Tune to your printer / job
 augura analyze bracket.step --nozzle 0.6 --min-perimeters 3
@@ -93,6 +94,7 @@ augura — bracket.step
 | Flag | Meaning |
 |---|---|
 | `--format text\|md\|json\|estampo` | output format (default `text`); `estampo` (analyze only) emits an estampo.toml fragment |
+| `--best-orientation` | rotate to the top-ranked print orientation before analysing and emit it as `orient = [X, Y, Z]` (estampo format, STEP input) |
 | `--support-angle` | overhang threshold, degrees from horizontal (default 45) |
 | `--nozzle` / `--min-perimeters` | wall-thickness limit = `min_perimeters × nozzle` |
 | `--build-volume X Y Z` | enable the bed-fit check against this volume (mm) |
