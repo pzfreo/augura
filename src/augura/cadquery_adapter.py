@@ -47,7 +47,7 @@ def _topo(cq_obj: Any) -> TopoDS_Shape:
     return cq_obj.wrapped
 
 
-def as_build123d(cq_obj: Any) -> Shape:
+def as_build123d(cq_obj: Any) -> Shape[Any]:
     """Wrap a CadQuery ``Solid`` / ``Shape`` / ``Workplane`` as a build123d Shape.
 
     The underlying ``TopoDS_Shape`` is shared — no geometry copy.
