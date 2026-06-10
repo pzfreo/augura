@@ -7,8 +7,9 @@ Usage::
 
 ``<file>`` is a STEP (``.step`` / ``.stp``) part — analysed on the exact BREP
 path — or an STL (``.stl``) — loaded as a mesh and analysed on the degraded,
-approximate path. Output is human text by default, or Markdown (``--format md``)
-or JSON (``--format json``).
+approximate path. Output is human text by default, or Markdown (``--format md``),
+JSON (``--format json``), or — for ``analyze`` — an estampo.toml fragment
+(``--format estampo``).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from augura.analyze import analyze
+from augura.estampo import to_estampo_toml
 from augura.footprint import BED_TOL
 from augura.mesh import is_mesh
 from augura.min_feature import DEFAULT_MIN_FEATURE
@@ -52,6 +54,8 @@ def _md_cell(text: str) -> str:
 
 
 def _render_report(report: Report, source: str, fmt: str) -> str:
+    if fmt == "estampo":
+        return to_estampo_toml(report)
     if fmt == "json":
         return json.dumps({"source": source, **report.to_dict()}, indent=2)
     if fmt == "md":
@@ -118,7 +122,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     an = sub.add_parser("analyze", help="report a part's printability issues")
     an.add_argument("file", type=Path, help="STEP (.step/.stp) or STL (.stl) file")
-    an.add_argument("--format", choices=["text", "md", "json"], default="text")
+    an.add_argument("--format", choices=["text", "md", "json", "estampo"], default="text")
     an.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
     an.add_argument("--nozzle", type=float, default=DEFAULT_NOZZLE)
     an.add_argument("--min-perimeters", type=int, default=DEFAULT_MIN_PERIMETERS)

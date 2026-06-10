@@ -52,6 +52,23 @@ def test_analyze_md_with_findings(step_box: Path, capsys: pytest.CaptureFixture[
     assert "bed_fit" in out
 
 
+def test_analyze_estampo_clean(step_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["analyze", str(step_box), "--format", "estampo"]) == 0
+    out = capsys.readouterr().out
+    assert "enable_support = false" in out
+    assert 'brim_type = "no_brim"' in out
+    assert "[slicer.overrides]" not in out  # clean report -> minimal fragment
+
+
+def test_analyze_estampo_with_findings(step_box: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # A 20 mm box can't fit a 5 mm build volume -> bed-fit advisory.
+    cmd = ["analyze", str(step_box), "--format", "estampo", "--build-volume", "5", "5", "5"]
+    assert main(cmd) == 0
+    out = capsys.readouterr().out
+    assert "[slicer.overrides]" in out
+    assert "exceeds build volume" in out
+
+
 def test_exit_code_on_error(step_box: Path) -> None:
     over = ["analyze", str(step_box), "--build-volume", "5", "5", "5"]
     assert main([*over, "--exit-code"]) == 1
