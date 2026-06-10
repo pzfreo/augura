@@ -3,6 +3,23 @@
 All notable changes to augura are documented here. Versions follow PEP 440;
 between releases `pyproject.toml` carries a `.devN` suffix.
 
+## 0.1.3
+
+- **estampo output on the CLI**: `augura analyze <part>.step --format estampo`
+  emits the `estampo.toml` fragment (with source provenance in the header).
+- **Orientation-aware analysis**: `--best-orientation` rotates the part to its
+  top-ranked print pose before analysing (works with every output format; the
+  rotation is reported — `orient = [X, Y, Z]` in estampo, `rotation` in JSON);
+  `--orient X Y Z` analyses at an explicit pose instead. Both are STEP-only.
+- **Build-volume-aware orientation ranking**: `orientation_scores` gained
+  `build_volume=` — poses that fit rank before poses that don't, scores carry
+  `fits_build_volume`, and `augura orientations --build-volume` marks misfits;
+  `--best-orientation` warns when no candidate pose fits. All fit checks (BREP,
+  mesh, ranking) now share one `overflowing_axes` predicate and tolerance.
+- **`apply_orientation(shape, rotation)`** is public: poses a shape exactly as
+  `orientation_scores` evaluated it (rotate, then drop onto the bed). The
+  Euler convention (intrinsic X→Y→Z, build123d `Rotation`) is now documented.
+
 ## 0.1.2
 
 - **CadQuery input**: `analyze` and `orientation_scores` accept CadQuery
