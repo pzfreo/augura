@@ -31,7 +31,7 @@ from augura.orientation import (
     apply_orientation,
     orientation_scores,
 )
-from augura.overhangs import DEFAULT_SUPPORT_ANGLE
+from augura.overhangs import DEFAULT_MAX_BRIDGE, DEFAULT_SUPPORT_ANGLE
 from augura.report import Report, Severity
 from augura.wall_thickness import DEFAULT_MIN_PERIMETERS, DEFAULT_NOZZLE
 
@@ -88,7 +88,10 @@ def _render_report(report: Report, source: str, fmt: str, orient: Rotation3 | No
     lines += [f"  [{f.severity.value.upper()}] {f.kind}: {f.message}" for f in report.findings]
     errors = sum(1 for f in report.findings if f.severity is Severity.ERROR)
     warnings = sum(1 for f in report.findings if f.severity is Severity.WARNING)
-    lines.append(f"  {len(report.findings)} finding(s): {errors} error, {warnings} warning")
+    infos = sum(1 for f in report.findings if f.severity is Severity.INFO)
+    lines.append(
+        f"  {len(report.findings)} finding(s): {errors} error, {warnings} warning, {infos} info"
+    )
     return "\n".join(lines)
 
 
@@ -166,6 +169,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="MM",
         help="minimum vertical feature size (mm) to flag (default: %(default)s)",
     )
+    an.add_argument(
+        "--max-bridge",
+        type=float,
+        default=DEFAULT_MAX_BRIDGE,
+        metavar="MM",
+        help="flat ceilings with a span up to this (mm) are bridgeable info, not"
+        " overhang warnings (default: %(default)s)",
+    )
     an.add_argument("--exit-code", action="store_true", help="exit 1 if any ERROR-severity finding")
     pose = an.add_mutually_exclusive_group()
     pose.add_argument(
@@ -189,6 +200,14 @@ def _build_parser() -> argparse.ArgumentParser:
     orient.add_argument("file", type=Path, help="STEP (.step/.stp) file")
     orient.add_argument("--format", choices=["text", "md", "json"], default="text")
     orient.add_argument("--support-angle", type=float, default=DEFAULT_SUPPORT_ANGLE)
+    orient.add_argument(
+        "--max-bridge",
+        type=float,
+        default=DEFAULT_MAX_BRIDGE,
+        metavar="MM",
+        help="flat ceilings with a span up to this (mm) don't count toward a pose's"
+        " support need (default: %(default)s)",
+    )
     orient.add_argument(
         "--build-volume",
         nargs=3,
@@ -225,6 +244,7 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
                 support_angle=args.support_angle,
                 bed_tol=args.bed_tol,
                 build_volume=build_volume,
+                max_bridge=args.max_bridge,
             )[0]
             if best.fits_build_volume is False:
                 print(
@@ -245,6 +265,7 @@ def _run_analyze(shape: Any, args: argparse.Namespace) -> int:
         min_perimeters=args.min_perimeters,
         bed_tol=args.bed_tol,
         min_feature=args.min_feature,
+        max_bridge=args.max_bridge,
     )
     print(_render_report(report, args.file.name, args.format, orient=orient))
     if args.exit_code and any(f.severity is Severity.ERROR for f in report.findings):
@@ -260,6 +281,7 @@ def _run_orientations(shape: Any, args: argparse.Namespace) -> int:
         support_angle=args.support_angle,
         bed_tol=args.bed_tol,
         build_volume=_xyz(args.build_volume) if args.build_volume else None,
+        max_bridge=args.max_bridge,
     )
     print(_render_orientations(scores, args.file.name, args.format))
     return 0

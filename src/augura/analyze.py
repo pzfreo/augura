@@ -18,7 +18,7 @@ from augura.footprint import BED_TOL
 from augura.manifold import find_manifold_issues
 from augura.mesh import analyze_mesh, is_mesh
 from augura.min_feature import DEFAULT_MIN_FEATURE, find_thin_features
-from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
+from augura.overhangs import DEFAULT_MAX_BRIDGE, DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Report
 from augura.tip_over import find_tip_over
 from augura.wall_thickness import DEFAULT_MIN_PERIMETERS, DEFAULT_NOZZLE, find_thin_walls
@@ -33,6 +33,7 @@ def analyze(
     min_perimeters: int = DEFAULT_MIN_PERIMETERS,
     bed_tol: float = BED_TOL,
     min_feature: float = DEFAULT_MIN_FEATURE,
+    max_bridge: float = DEFAULT_MAX_BRIDGE,
 ) -> Report:
     """Analyse a solid and return its printability report.
 
@@ -55,6 +56,9 @@ def analyze(
         min_feature: Smallest vertical feature (mm) to flag as capping the layer
             height. Features at or above this threshold are not reported. Has no
             effect on mesh (STL) inputs — the mesh path has no thin-feature check.
+        max_bridge: A flat ceiling whose narrowest span is at or below this many
+            mm is reported as a bridgeable ``bridge`` (INFO) instead of an
+            ``overhang`` (WARNING). BREP path only; the mesh path does not bridge-check.
 
     A tessellated mesh (trimesh) is accepted too and routed to the degraded,
     approximate mesh path; the exact BREP path is used for build123d shapes.
@@ -65,7 +69,9 @@ def analyze(
         return analyze_mesh(
             shape, support_angle=support_angle, build_volume=build_volume, bed_tol=bed_tol
         )
-    findings = find_overhangs(shape, support_angle=support_angle, bed_tol=bed_tol)
+    findings = find_overhangs(
+        shape, support_angle=support_angle, bed_tol=bed_tol, max_bridge=max_bridge
+    )
     findings += find_manifold_issues(shape)
     findings += find_tip_over(shape, bed_tol=bed_tol)
     findings += find_brim_risk(shape, bed_tol=bed_tol)

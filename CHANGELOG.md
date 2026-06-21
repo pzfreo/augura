@@ -3,6 +3,31 @@
 All notable changes to augura are documented here. Versions follow PEP 440;
 between releases `pyproject.toml` carries a `.devN` suffix.
 
+## 0.1.4
+
+- **Python 3.13 supported**: `requires-python` raised to `>=3.11,<3.14`. The
+  build123d / cadquery-ocp stack installs on 3.13 (the 3.13 wheel pulls the
+  `cadquery_vtk` fork in place of upstream `vtk`); augura's full suite passes
+  there. CI still runs 3.11/3.12 because the committed `uv.lock` can't `uv sync`
+  on 3.13 with build123d 0.10 — cadquery-ocp 7.8 ships divergent per-wheel deps
+  that a universal lock can't represent — but a normal `pip install augura`
+  resolves freshly and works on 3.13.
+- **Bridge vs. overhang (#49)**: a flat (horizontal) downward ceiling that is
+  *wall-bounded* and whose narrowest span is at or below `--max-bridge`
+  (default 5 mm) is now reported as an informational `bridge` (FDM bridges it
+  without support) instead of a blanket `overhang` warning. The check is
+  adjacency-aware: the underside of a floating or cantilevered mass is never a
+  bridge, however narrow, because it has no walls to anchor bridge lines to.
+  Overhang messages now carry the face area (and, for flats, the span) so a wide
+  flat ceiling reads differently from a hairline ridge. `bridge` findings are
+  excluded from the support area used in orientation ranking; a `report.bridges`
+  accessor and a `--max-bridge` flag (on `analyze` and `orientations`) are added.
+- **Degenerate-apex crash fixed (#48)**: `analyze` aborted with
+  `gp_Vec::Normalized() - vector has zero norm` on watertight solids with a
+  point-singular face (cone tip, pyramid apex) — a wall-thickness probe ray
+  grazing the apex hit an undefined normal. Such rays are now skipped; the part
+  analyses normally.
+
 ## 0.1.3
 
 - **estampo output on the CLI**: `augura analyze <part>.step --format estampo`

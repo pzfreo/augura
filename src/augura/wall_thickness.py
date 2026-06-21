@@ -72,8 +72,15 @@ def min_wall_thickness(shape: Shape[Any]) -> float | None:
     thinnest: float | None = None
     for face in shape.faces():
         for point, inward in _face_sample_pairs(face):
+            try:
+                hits = list(shape.find_intersection_points(Axis(point, inward)))
+            except Exception:
+                # A ray grazing a degenerate point (cone apex, pyramid tip) makes
+                # OCCT's normal-at-intersection undefined (zero-norm) and throws.
+                # Skip this ray; other samples still bound the wall thickness.
+                continue
             forward = []
-            for hit_point, _ in shape.find_intersection_points(Axis(point, inward)):
+            for hit_point, _ in hits:
                 d = (hit_point - point).dot(inward)
                 if d > _RAY_TOL:
                     forward.append(d)

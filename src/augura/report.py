@@ -63,6 +63,11 @@ class Report:
         return self.of_kind("overhang")
 
     @property
+    def bridges(self) -> tuple[Finding, ...]:
+        """Findings noting a flat ceiling short enough to bridge without support."""
+        return self.of_kind("bridge")
+
+    @property
     def bed_fit(self) -> tuple[Finding, ...]:
         """Findings flagging that the part overflows the build volume."""
         return self.of_kind("bed_fit")
