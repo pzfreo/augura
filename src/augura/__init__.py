@@ -15,12 +15,13 @@ from augura.manifold import find_manifold_issues, is_watertight
 from augura.mesh import analyze_mesh
 from augura.min_feature import find_thin_features, min_vertical_feature
 from augura.orientation import OrientationScore, apply_orientation, orientation_scores
-from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
+from augura.overhangs import DEFAULT_MAX_BRIDGE, DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Finding, Report, Severity
 from augura.tip_over import find_tip_over
 from augura.wall_thickness import find_thin_walls, min_wall_thickness
 
 __all__ = [
+    "DEFAULT_MAX_BRIDGE",
     "DEFAULT_SUPPORT_ANGLE",
     "Finding",
     "OrientationScore",

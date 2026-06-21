@@ -24,6 +24,7 @@ explainable printability report.
 | Check | What it flags |
 |---|---|
 | **overhangs** | downward faces shallower than the support angle (bed contact excluded) |
+| **bridges** | flat, wall-bounded ceilings narrow enough to bridge without support (info, not a warning) |
 | **orientation search** | ranks candidate poses by unsupported overhang area |
 | **manifold / watertight** | a part that isn't a closed solid |
 | **tip-over** | centre of mass projecting outside the bed-contact footprint |
@@ -105,6 +106,7 @@ augura — bracket.step
 | `--best-orientation` | rotate to the top-ranked print orientation before analysing (poses that fit `--build-volume` rank first); the rotation is reported in the output (STEP input only) |
 | `--orient X Y Z` | analyse at this explicit Euler rotation (degrees) instead — e.g. a pose chosen from `augura orientations` (STEP input only) |
 | `--support-angle` | overhang threshold, degrees from horizontal (default 45) |
+| `--max-bridge` | flat wall-bounded ceilings with a span up to this (mm) are bridgeable info, not overhang warnings (default 5) |
 | `--nozzle` / `--min-perimeters` | wall-thickness limit = `min_perimeters × nozzle` |
 | `--build-volume X Y Z` | enable the bed-fit check against this volume (mm) |
 | `--exit-code` | exit `1` if any ERROR finding (manifold / bed-fit / tip-over) |
@@ -124,6 +126,7 @@ for f in report.findings:
     print(f.severity, f.kind, f.message)
 
 report.overhangs        # tuple[Finding, ...] — just the overhang findings
+report.bridges          # flat ceilings short enough to bridge (no support)
 report.bed_fit          # likewise per check: .manifold_issues, .tip_over,
                         # .brim, .min_feature, .thin_walls
 report.to_dict()        # JSON-serialisable view

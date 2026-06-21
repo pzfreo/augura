@@ -19,7 +19,7 @@ from build123d import Pos, Rotation, Shape
 from augura.bed_fit import overflowing_axes
 from augura.cadquery_adapter import as_build123d, is_cadquery
 from augura.footprint import BED_TOL, bed_contact_faces
-from augura.overhangs import DEFAULT_SUPPORT_ANGLE, find_overhangs
+from augura.overhangs import DEFAULT_MAX_BRIDGE, DEFAULT_SUPPORT_ANGLE, find_overhangs
 
 Rotation3 = tuple[float, float, float]
 
@@ -77,6 +77,7 @@ def orientation_scores(
     candidates: list[Rotation3] | None = None,
     bed_tol: float = BED_TOL,
     build_volume: tuple[float, float, float] | None = None,
+    max_bridge: float = DEFAULT_MAX_BRIDGE,
 ) -> list[OrientationScore]:
     """Rank candidate orientations best-first.
 
@@ -106,8 +107,13 @@ def orientation_scores(
             sum(
                 (f.area or 0.0)
                 for f in find_overhangs(
-                    oriented, support_angle=support_angle, faces=faces, bed_tol=bed_tol
+                    oriented,
+                    support_angle=support_angle,
+                    faces=faces,
+                    bed_tol=bed_tol,
+                    max_bridge=max_bridge,
                 )
+                if f.kind == "overhang"
             )
         )
         contact = float(
