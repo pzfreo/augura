@@ -5,6 +5,13 @@ between releases `pyproject.toml` carries a `.devN` suffix.
 
 ## 0.1.4
 
+- **Python 3.13 supported**: `requires-python` raised to `>=3.11,<3.14`. The
+  build123d / cadquery-ocp stack installs on 3.13 (the 3.13 wheel pulls the
+  `cadquery_vtk` fork in place of upstream `vtk`); augura's full suite passes
+  there. CI still runs 3.11/3.12 because the committed `uv.lock` can't `uv sync`
+  on 3.13 with build123d 0.10 — cadquery-ocp 7.8 ships divergent per-wheel deps
+  that a universal lock can't represent — but a normal `pip install augura`
+  resolves freshly and works on 3.13.
 - **Bridge vs. overhang (#49)**: a flat (horizontal) downward ceiling that is
   *wall-bounded* and whose narrowest span is at or below `--max-bridge`
   (default 5 mm) is now reported as an informational `bridge` (FDM bridges it
