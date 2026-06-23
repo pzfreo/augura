@@ -33,6 +33,12 @@ jobs:
         include:
           - python-version: "3.14"
             build123d: "0.11.0"
+        # 0.10's OCP backend (cadquery-ocp) pins vtk==9.3.1, which has no
+        # cp313 wheel, so the 0.10 path can't install on 3.13+. 3.13/3.14 are
+        # covered by 0.11 (cadquery-ocp-novtk, no vtk dependency).
+        exclude:
+          - python-version: "3.13"
+            build123d: "0.10.0"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
