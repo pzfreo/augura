@@ -20,8 +20,9 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    # build123d is the core BREP path. Pre-1.0; soft-pin to the tested major+minor.
-    "build123d>=0.10,<0.11",
+    # build123d is the core BREP path. Pre-1.0; soft-pin to the tested range.
+    # Tested against both 0.10 and 0.11.
+    "build123d>=0.10,<0.12",
     # trimesh powers the STL/mesh input path; core so STL "just works".
     "trimesh",
 ]

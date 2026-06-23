@@ -27,11 +27,13 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
+        # build123d is pre-1.0; test against both supported minors.
+        build123d: ["0.10.0", "0.11.0"]
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv sync
+      - run: uv sync --upgrade-package "build123d==${{ matrix.build123d }}"
       - name: pytest (with coverage gate)
         run: uv run pytest
