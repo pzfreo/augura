@@ -29,21 +29,22 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
         # build123d is pre-1.0; test against both supported minors.
         build123d: ["0.10.0", "0.11.0"]
-        # 0.11 adds Python 3.14 support; 0.10 does not.
+        # 0.11 adds Python 3.14 support; 0.10 caps at <3.14.
         include:
           - python-version: "3.14"
             build123d: "0.11.0"
-        # 0.10's OCP backend (cadquery-ocp) pins vtk==9.3.1, which has no
-        # cp313 wheel, so the 0.10 path can't install on 3.13+. 3.13/3.14 are
-        # covered by 0.11 (cadquery-ocp-novtk, no vtk dependency).
-        exclude:
-          - python-version: "3.13"
-            build123d: "0.10.0"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --upgrade-package "build123d==${{ matrix.build123d }}"
+      # Resolve each leg platform-specifically (like a real `pip install`)
+      # rather than via the universal lock: 0.10 pulls cadquery-ocp +
+      # cadquery-vtk (cp313 wheels), 0.11 pulls cadquery-ocp-novtk (no vtk).
+      # The universal lock can't span both OCP backends across 3.11-3.14.
+      - name: Install (pinned build123d)
+        run: |
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install "build123d==${{ matrix.build123d }}" pytest "pytest-cov>=7.1.0" .
       - name: pytest (with coverage gate)
-        run: uv run pytest
+        run: uv run --no-sync pytest
