@@ -171,7 +171,7 @@ def test_analyze_assembly_like_raises_clearly() -> None:
     _MockAssembly.__module__ = "cadquery.assembly"
     assert is_cadquery(_MockAssembly())
     with pytest.raises(TypeError, match="Assembly, flatten"):
-        analyze(_MockAssembly())  # type: ignore[arg-type]
+        analyze(_MockAssembly())
 
 
 def test_as_build123d_solid_with_stray_face_raises() -> None:
