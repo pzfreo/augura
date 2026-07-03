@@ -3,6 +3,14 @@
 All notable changes to augura are documented here. Versions follow PEP 440;
 between releases `pyproject.toml` carries a `.devN` suffix.
 
+## 0.1.7
+
+- **Constrain away from the broken `cadquery-ocp-novtk 7.9.3.1.1` wheel** (#53). build123d
+  0.11 pulls `cadquery-ocp-novtk>=7.9`, which resolves to 7.9.3.1.1 — a macOS wheel with no
+  `OCP.GccEnt` module, so `import build123d` fails on a clean install. Added a `[tool.uv]`
+  constraint (`!=7.9.3.1.1`; 7.9.3.1 is intact) that only bites when novtk is resolved, so
+  the build123d 0.10 matrix is untouched. Remove when upstream yanks/fixes 7.9.3.1.1.
+
 ## 0.1.6
 
 - **`wall_thickness_at(shape, point, direction)`**: local wall thickness at a
