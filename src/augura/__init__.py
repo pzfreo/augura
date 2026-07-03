@@ -18,7 +18,7 @@ from augura.orientation import OrientationScore, apply_orientation, orientation_
 from augura.overhangs import DEFAULT_MAX_BRIDGE, DEFAULT_SUPPORT_ANGLE, find_overhangs
 from augura.report import Finding, Report, Severity
 from augura.tip_over import find_tip_over
-from augura.wall_thickness import find_thin_walls, min_wall_thickness
+from augura.wall_thickness import find_thin_walls, min_wall_thickness, wall_thickness_at
 
 __all__ = [
     "DEFAULT_MAX_BRIDGE",
@@ -44,4 +44,5 @@ __all__ = [
     "min_wall_thickness",
     "orientation_scores",
     "to_estampo_toml",
+    "wall_thickness_at",
 ]

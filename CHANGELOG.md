@@ -3,6 +3,18 @@
 All notable changes to augura are documented here. Versions follow PEP 440;
 between releases `pyproject.toml` carries a `.devN` suffix.
 
+## 0.1.6
+
+- **`wall_thickness_at(shape, point, direction=None)`**: local wall thickness at a
+  caller-chosen location, exposing the same BREP-exact ray query that backs
+  `min_wall_thickness` (via `find_intersection_points`). With a `direction` it
+  measures the solid **chord** *through* the point — correct even mid-wall (spans
+  both sides, not just point→first-face) or from a void ahead of a wall (first
+  entry→exit segment); without one it snaps the point to the nearest face and
+  probes inward along its normal. Returns `None` when no opposite surface is
+  found. Enables a targeted "is this rib/wall the thickness the drawing calls
+  for" check in downstream tools, complementing the global `min_wall_thickness`.
+
 ## 0.1.4
 
 - **Python 3.13 supported**: `requires-python` raised to `>=3.11,<3.14`. The
