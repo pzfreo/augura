@@ -19,6 +19,7 @@ regions. A medial-axis method would be fully exhaustive.
 
 from __future__ import annotations
 
+import numbers
 from typing import Any
 
 from build123d import Axis, Shape, Vector
@@ -97,10 +98,10 @@ def _as_vector(value: Any) -> Vector:
         return value
     seq = tuple(value)
     if len(seq) != 3 or not all(
-        isinstance(c, (int, float)) and not isinstance(c, bool) for c in seq
+        isinstance(c, numbers.Real) and not isinstance(c, bool) for c in seq
     ):
         raise TypeError(f"expected an (x, y, z) triple of numbers, got {value!r}")
-    return Vector(*seq)
+    return Vector(*(float(c) for c in seq))
 
 
 def _dedup_sorted(values: Any) -> list[float]:
@@ -127,28 +128,25 @@ def _line_crossings(shape: Shape[Any], origin: Vector, ray: Vector) -> list[floa
     return _dedup_sorted(ts)
 
 
-def _interval_distance(x: float, segment: tuple[float, float]) -> float:
-    a, b = segment
-    return a - x if x < a else (x - b if x > b else 0.0)
-
-
 def wall_thickness_at(shape: Shape[Any], point: Any, direction: Any) -> float | None:
     """Local wall thickness along a line through ``point``, or ``None``.
 
-    Measures the length of the solid segment of the line ``point + t*direction``
-    that the point lies in or on. **Sign-invariant** — the answer does not depend
-    on which way ``direction`` points — and correct wherever the point sits in the
-    wall: on a surface, mid-wall, or at an interior junction (it spans the single
-    contiguous solid segment containing the point, not point→first-face). If the
-    point is in a void, the nearest solid segment along the line is measured.
+    Measures the length of the contiguous solid segment of the line
+    ``point + t*direction`` that the point lies in or on. **Sign-invariant** — the
+    answer does not depend on which way ``direction`` points — and correct wherever
+    the point sits in the wall: on a surface, mid-wall, or at an interior junction.
 
-    Same measured, BREP-exact ray query as :func:`min_wall_thickness`, but at a
-    caller-chosen location. Returns ``None`` when the line meets no solid (a miss,
-    or an open 2-D face). A near-tangent/grazing ray returns the true (small)
-    chord it cuts — which is not a wall; pick a direction that crosses it.
+    Returns ``None`` when the point lies in **no** solid segment (a void), or when
+    the line meets no solid at all (a miss / open 2-D face) — abstain rather than
+    report an unrelated wall the caller cannot distinguish from a real hit. Place
+    the point in or on the wall you mean to measure. A near-tangent/grazing ray
+    returns the true (small) chord it cuts — which is not a wall; pick a direction
+    that crosses it.
 
-    Assumes a valid (watertight) solid; classification on a non-manifold shell is
-    unreliable. ``point``/``direction`` are absolute in the part's own frame.
+    Same measured, BREP-exact ray query as :func:`min_wall_thickness`, at a
+    caller-chosen location. Assumes a valid (watertight) solid; classification on
+    a non-manifold shell is unreliable. ``point``/``direction`` are absolute in the
+    part's own frame.
     """
     origin = _as_vector(point)
     ray = _as_vector(direction)
@@ -160,22 +158,35 @@ def wall_thickness_at(shape: Shape[Any], point: Any, direction: Any) -> float | 
     if len(crossings) < 2:
         return None
 
+    # Test each solid, not the shape as a whole: OCC's Compound.is_inside only
+    # classifies against the first solid, so a multi-solid/unfused compound would
+    # misreport a midpoint inside a later solid as outside.
+    part_solids = shape.solids()
+
+    def _inside(pt: Vector) -> bool:
+        try:
+            return any(s.is_inside(pt) for s in part_solids)
+        except Exception:
+            return False
+
     # Solid segments = consecutive crossings whose midpoint is inside the solid.
+    # Adjacent solid segments are coalesced: a crossing with solid on BOTH sides
+    # (a tangency to an internal bore, or a coincident face in an unfused compound)
+    # is not a real solid↔void transition and must not split the span.
     solids: list[tuple[float, float]] = []
     for a, b in zip(crossings, crossings[1:], strict=False):
-        try:
-            inside = bool(shape.is_inside(origin + ray * ((a + b) / 2.0)))
-        except Exception:
-            inside = False
-        if inside:
+        if not _inside(origin + ray * ((a + b) / 2.0)):
+            continue
+        if solids and a - solids[-1][1] <= _RAY_TOL:
+            solids[-1] = (solids[-1][0], b)
+        else:
             solids.append((a, b))
-    if not solids:
-        return None
 
-    # The segment the point lies in/on (t = 0), else the nearest solid segment.
-    containing = [s for s in solids if s[0] - _RAY_TOL <= 0.0 <= s[1] + _RAY_TOL]
-    a, b = containing[0] if containing else min(solids, key=lambda s: _interval_distance(0.0, s))
-    return b - a
+    # Report the wall the point lies in or on; otherwise abstain.
+    for a, b in solids:
+        if a - _RAY_TOL <= 0.0 <= b + _RAY_TOL:
+            return b - a
+    return None
 
 
 def find_thin_walls(

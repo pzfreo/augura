@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from build123d import Box, Cone, Rectangle, Sphere, Vector
+from build123d import Box, Compound, Cone, Cylinder, Pos, Rectangle, Sphere, Vector
 
 from augura import Severity, analyze, find_thin_walls, min_wall_thickness, wall_thickness_at
 from tests.fixtures import FLAT_PLATE, THIN_WALL_TUBE
@@ -83,18 +83,17 @@ def test_wall_thickness_at_is_stable_across_the_surface_boundary() -> None:
 
 def test_wall_thickness_at_diagonal_through_edges_is_not_zero() -> None:
     # regression: duplicate hits where a ray crosses corner edges must not collapse
-    # the chord to 0.0.
+    # the chord to 0.0. Interior point so it lands in the (single) solid segment.
     cube = Box(20, 20, 20)  # x, y ∈ [-10, 10]
-    assert wall_thickness_at(cube, Vector(-20, -20, 0), Vector(1, 1, 0)) == pytest.approx(
+    assert wall_thickness_at(cube, Vector(0, 0, 0), Vector(1, 1, 0)) == pytest.approx(
         28.284, abs=0.05
     )
 
 
-def test_wall_thickness_at_void_point_measures_nearest_segment() -> None:
+def test_wall_thickness_at_void_point_abstains() -> None:
+    # a point in no wall must abstain (None), not report a distant/behind wall.
     cube = Box(20, 20, 20)  # x ∈ [-10, 10]
-    assert wall_thickness_at(cube, Vector(-30, 0, 0), Vector(1, 0, 0)) == pytest.approx(
-        20.0, abs=0.02
-    )
+    assert wall_thickness_at(cube, Vector(-30, 0, 0), Vector(1, 0, 0)) is None
 
 
 def test_wall_thickness_at_surface_point_explicit_direction() -> None:
@@ -119,3 +118,30 @@ def test_wall_thickness_at_rejects_malformed_point() -> None:
     for bad in ((1, 2), (1, 2, 3, 4), "xyz"):
         with pytest.raises((TypeError, ValueError)):
             wall_thickness_at(cube, bad, Vector(1, 0, 0))
+
+
+def test_wall_thickness_at_coalesces_tangent_to_internal_bore() -> None:
+    # regression: a ray tangent to an internal hole injects a crossing with solid
+    # on both sides; the span must not be split (was 10.0, half the true wall).
+    part = Box(20, 20, 10) - Cylinder(3, 12)  # hole r=3 along Z; wall along X ~20
+    assert wall_thickness_at(part, Vector(0.5, 3, 0), Vector(1, 0, 0)) == pytest.approx(
+        20.0, abs=0.05
+    )
+
+
+def test_wall_thickness_at_coalesces_unfused_compound() -> None:
+    # regression: a coincident internal face in an unfused compound must not split
+    # the wall (was 4.0, half the true 8 mm).
+    comp = Compound([Pos(-2, 0, 0) * Box(4, 10, 10), Pos(2, 0, 0) * Box(4, 10, 10)])
+    assert wall_thickness_at(comp, Vector(0, 0, 0), Vector(1, 0, 0)) == pytest.approx(8.0, abs=0.02)
+
+
+def test_wall_thickness_at_accepts_numpy_int_and_float_points() -> None:
+    np = pytest.importorskip("numpy")
+    cube = Box(20, 20, 20)
+    assert wall_thickness_at(cube, np.array([0, 0, 0]), Vector(1, 0, 0)) == pytest.approx(
+        20.0, abs=0.02
+    )
+    assert wall_thickness_at(cube, np.array([0.0, 0.0, 0.0]), Vector(1, 0, 0)) == pytest.approx(
+        20.0, abs=0.02
+    )
