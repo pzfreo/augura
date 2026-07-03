@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from build123d import Axis, Shape, Vector, Vertex
+from build123d import Axis, Shape, Vector
 
 from augura.report import Finding, Severity
 
@@ -91,107 +91,91 @@ def min_wall_thickness(shape: Shape[Any]) -> float | None:
     return thinnest
 
 
-def _vertex(v: Vector) -> Vertex:
-    return Vertex(v.X, v.Y, v.Z)
+def _as_vector(value: Any) -> Vector:
+    """Coerce a point/direction to a ``Vector``, rejecting non-(x, y, z) input."""
+    if isinstance(value, Vector):
+        return value
+    seq = tuple(value)
+    if len(seq) != 3 or not all(
+        isinstance(c, (int, float)) and not isinstance(c, bool) for c in seq
+    ):
+        raise TypeError(f"expected an (x, y, z) triple of numbers, got {value!r}")
+    return Vector(*seq)
 
 
-def _forward_hits(shape: Shape[Any], origin: Vector, direction: Vector) -> list[float]:
-    """Sorted distances (> tol) from ``origin`` to boundary hits along ``direction``.
-
-    Shares the grazing-degenerate-apex guard with :func:`min_wall_thickness`.
-    """
-    try:
-        hits = list(shape.find_intersection_points(Axis(origin, direction)))
-    except Exception:
-        return []
-    forward = [(hp - origin).dot(direction) for hp, _ in hits]
-    return sorted(d for d in forward if d > _RAY_TOL)
+def _dedup_sorted(values: Any) -> list[float]:
+    """Sorted values with near-duplicates merged: a ray crossing a shared edge is
+    reported once per adjacent face, so raw hit distances contain duplicates."""
+    out: list[float] = []
+    for t in sorted(values):
+        if not out or t - out[-1] > _RAY_TOL:
+            out.append(t)
+    return out
 
 
-def _closest_surface_point(face: Any, origin: Vector) -> Vector | None:
-    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
-
-    ext = BRepExtrema_DistShapeShape(_vertex(origin).wrapped, face.wrapped)
-    if not ext.IsDone() or ext.NbSolution() < 1:
-        return None
-    p = ext.PointOnShape2(1)
-    return Vector(p.X(), p.Y(), p.Z())
-
-
-def _nearest_surface(shape: Shape[Any], origin: Vector) -> tuple[Vector, Vector] | None:
-    """Return (closest surface point, inward normal) for the face nearest ``origin``."""
-    v = _vertex(origin)
-    best: Any = None
-    best_d: float | None = None
-    for face in shape.faces():
+def _line_crossings(shape: Shape[Any], origin: Vector, ray: Vector) -> list[float]:
+    """Signed distances (along +``ray``) of every boundary crossing on the whole
+    line through ``origin``. Both half-rays are cast and merged so the result never
+    depends on whether ``find_intersection_points`` returns the ray or the line."""
+    ts: list[float] = []
+    for sign in (1.0, -1.0):
         try:
-            d = face.distance_to(v)
+            hits = shape.find_intersection_points(Axis(origin, ray * sign))
         except Exception:
             continue
-        if best_d is None or d < best_d:
-            best_d, best = d, face
-    if best is None:
-        return None
-    cp = _closest_surface_point(best, origin)
-    if cp is None:
-        return None
-    try:
-        return cp, -best.normal_at(cp)
-    except Exception:
-        return None
+        ts.extend((hp - origin).dot(ray) for hp, _ in hits)
+    return _dedup_sorted(ts)
 
 
-def wall_thickness_at(shape: Shape[Any], point: Any, direction: Any | None = None) -> float | None:
-    """Local wall thickness at ``point``, or ``None`` if no opposite surface.
+def _interval_distance(x: float, segment: tuple[float, float]) -> float:
+    a, b = segment
+    return a - x if x < a else (x - b if x > b else 0.0)
+
+
+def wall_thickness_at(shape: Shape[Any], point: Any, direction: Any) -> float | None:
+    """Local wall thickness along a line through ``point``, or ``None``.
+
+    Measures the length of the solid segment of the line ``point + t*direction``
+    that the point lies in or on. **Sign-invariant** — the answer does not depend
+    on which way ``direction`` points — and correct wherever the point sits in the
+    wall: on a surface, mid-wall, or at an interior junction (it spans the single
+    contiguous solid segment containing the point, not point→first-face). If the
+    point is in a void, the nearest solid segment along the line is measured.
 
     Same measured, BREP-exact ray query as :func:`min_wall_thickness`, but at a
-    caller-chosen location instead of face samples:
+    caller-chosen location. Returns ``None`` when the line meets no solid (a miss,
+    or an open 2-D face). A near-tangent/grazing ray returns the true (small)
+    chord it cuts — which is not a wall; pick a direction that crosses it.
 
-    - ``direction`` given: measures the solid **chord** along that line *through*
-      ``point`` — correct even when ``point`` is mid-wall (it spans the segment
-      containing the point, not merely point→first-face) or in a void ahead of a
-      wall (the first entry→exit segment).
-    - ``direction`` omitted: snaps ``point`` to the nearest face and measures
-      inward along that face's normal — the robust opposed-face path, no reliance
-      on where in the wall the caller placed the point.
-
-    Returns ``None`` when the ray finds no opposite surface (misses, or an open
-    2-D face with no material). Assumes a valid (watertight) solid, like every
-    ray/inside query; classification on a non-manifold shell is unreliable.
+    Assumes a valid (watertight) solid; classification on a non-manifold shell is
+    unreliable. ``point``/``direction`` are absolute in the part's own frame.
     """
-    origin = point if isinstance(point, Vector) else Vector(point)
-
-    if direction is None:
-        near = _nearest_surface(shape, origin)
-        if near is None:
-            return None
-        origin, ray = near
-        forward = _forward_hits(shape, origin, ray)
-        return min(forward) if forward else None
-
-    ray = direction if isinstance(direction, Vector) else Vector(direction)
+    origin = _as_vector(point)
+    ray = _as_vector(direction)
     if ray.length < _RAY_TOL:
         return None
     ray = ray.normalized()
-    forward = _forward_hits(shape, origin, ray)
 
-    try:
-        on_surface = shape.distance_to(_vertex(origin)) < _RAY_TOL
-    except Exception:
-        on_surface = False
-    if on_surface:  # a surface point: nearest opposite face is the wall
-        return min(forward) if forward else None
+    crossings = _line_crossings(shape, origin, ray)
+    if len(crossings) < 2:
+        return None
 
-    try:
-        inside = bool(shape.is_inside(origin))
-    except Exception:
-        inside = False
-    if inside:  # interior point: span the wall on both sides
-        back = _forward_hits(shape, origin, -ray)
-        return (min(forward) + min(back)) if forward and back else None
+    # Solid segments = consecutive crossings whose midpoint is inside the solid.
+    solids: list[tuple[float, float]] = []
+    for a, b in zip(crossings, crossings[1:], strict=False):
+        try:
+            inside = bool(shape.is_inside(origin + ray * ((a + b) / 2.0)))
+        except Exception:
+            inside = False
+        if inside:
+            solids.append((a, b))
+    if not solids:
+        return None
 
-    # void / outside: chord of the first solid segment the ray crosses
-    return (forward[1] - forward[0]) if len(forward) >= 2 else None
+    # The segment the point lies in/on (t = 0), else the nearest solid segment.
+    containing = [s for s in solids if s[0] - _RAY_TOL <= 0.0 <= s[1] + _RAY_TOL]
+    a, b = containing[0] if containing else min(solids, key=lambda s: _interval_distance(0.0, s))
+    return b - a
 
 
 def find_thin_walls(

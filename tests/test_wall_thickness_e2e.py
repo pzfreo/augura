@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from build123d import Cone, Rectangle, Sphere
+from build123d import Box, Cone, Rectangle, Sphere, Vector
 
-from augura import Severity, analyze, find_thin_walls, min_wall_thickness
+from augura import Severity, analyze, find_thin_walls, min_wall_thickness, wall_thickness_at
 from tests.fixtures import FLAT_PLATE, THIN_WALL_TUBE
 
 
@@ -40,78 +40,82 @@ def test_degenerate_apex_does_not_crash() -> None:
     assert isinstance(analyze(Sphere(5)).findings, tuple)
 
 
-def test_wall_thickness_at_derives_direction_from_nearest_face() -> None:
-    # 0.3 mm tube wall: a point on the outer surface, no direction given → augura
-    # snaps to the face and probes inward along its normal.
-    from build123d import Vector
-
-    from augura import wall_thickness_at
-
-    tube = THIN_WALL_TUBE.build()
-    assert wall_thickness_at(tube, Vector(10, 0, 10)) == pytest.approx(0.3, abs=0.02)
+# --------------------------------------------------------------------------- #
+# wall_thickness_at — local wall thickness along a line through a point        #
+# --------------------------------------------------------------------------- #
 
 
 def test_wall_thickness_at_interior_point_spans_both_sides() -> None:
-    # A point *mid-wall* with an explicit direction must span the whole wall
-    # (both sides), not just point→first-face.
-    from build123d import Vector
-
-    from augura import wall_thickness_at
-
+    # A mid-wall point spans the whole 0.3 mm tube wall, not point→first-face.
     tube = THIN_WALL_TUBE.build()
-    t = wall_thickness_at(tube, Vector(9.85, 0, 10), Vector(1, 0, 0))
-    assert t == pytest.approx(0.3, abs=0.02)
+    assert wall_thickness_at(tube, Vector(9.85, 0, 10), Vector(1, 0, 0)) == pytest.approx(
+        0.3, abs=0.02
+    )
 
 
 def test_wall_thickness_at_plate_through_thickness() -> None:
-    from build123d import Vector
-
-    from augura import wall_thickness_at
-
     plate = FLAT_PLATE.build()  # Box(40, 40, 5), z ∈ [0, 5]
     assert wall_thickness_at(plate, Vector(0, 0, 2.5), Vector(0, 0, 1)) == pytest.approx(
         5.0, abs=0.02
     )
 
 
-def test_wall_thickness_at_void_point_measures_first_segment() -> None:
-    # From outside the part, the chord of the first solid segment the ray crosses.
-    from build123d import Box, Vector
+def test_wall_thickness_at_is_sign_invariant_on_a_surface_point() -> None:
+    # regression: an on-surface point gives the wall thickness for BOTH directions
+    # (the old on_surface branch returned None for the outward one).
+    plate = FLAT_PLATE.build()  # z ∈ [0, 5]
+    assert wall_thickness_at(plate, Vector(0, 0, 5), Vector(0, 0, 1)) == pytest.approx(
+        5.0, abs=0.02
+    )
+    assert wall_thickness_at(plate, Vector(0, 0, 5), Vector(0, 0, -1)) == pytest.approx(
+        5.0, abs=0.02
+    )
 
-    from augura import wall_thickness_at
 
+def test_wall_thickness_at_is_stable_across_the_surface_boundary() -> None:
+    # regression: no sub-micron discontinuity flipping a valid 5.0 to None.
+    plate = FLAT_PLATE.build()
+    for z in (5 - 1e-6, 5 - 9e-7, 5.0, 5 + 9e-7):
+        assert wall_thickness_at(plate, Vector(0, 0, z), Vector(0, 0, 1)) == pytest.approx(
+            5.0, abs=0.02
+        )
+
+
+def test_wall_thickness_at_diagonal_through_edges_is_not_zero() -> None:
+    # regression: duplicate hits where a ray crosses corner edges must not collapse
+    # the chord to 0.0.
+    cube = Box(20, 20, 20)  # x, y ∈ [-10, 10]
+    assert wall_thickness_at(cube, Vector(-20, -20, 0), Vector(1, 1, 0)) == pytest.approx(
+        28.284, abs=0.05
+    )
+
+
+def test_wall_thickness_at_void_point_measures_nearest_segment() -> None:
     cube = Box(20, 20, 20)  # x ∈ [-10, 10]
     assert wall_thickness_at(cube, Vector(-30, 0, 0), Vector(1, 0, 0)) == pytest.approx(
         20.0, abs=0.02
     )
 
 
-def test_wall_thickness_at_abstains_when_ray_misses() -> None:
-    from build123d import Box, Rectangle, Vector
-
-    from augura import wall_thickness_at
-
-    cube = Box(20, 20, 20)
-    # a ray parallel to but clear of the cube hits nothing
-    assert wall_thickness_at(cube, Vector(-30, 100, 0), Vector(1, 0, 0)) is None
-    # a bare 2-D face has no material to measure
-    assert wall_thickness_at(Rectangle(10, 10), Vector(0, 0, 0)) is None
-
-
-def test_wall_thickness_at_zero_direction_abstains() -> None:
-    from build123d import Box, Vector
-
-    from augura import wall_thickness_at
-
-    assert wall_thickness_at(Box(20, 20, 20), Vector(0, 0, 0), Vector(0, 0, 0)) is None
-
-
-def test_wall_thickness_at_surface_point_with_explicit_direction() -> None:
-    from build123d import Box, Vector
-
-    from augura import wall_thickness_at
-
-    cube = Box(20, 20, 20)  # x ∈ [-10, 10]; point on the -x face, probe inward
+def test_wall_thickness_at_surface_point_explicit_direction() -> None:
+    cube = Box(20, 20, 20)  # point on the -x face, probe inward
     assert wall_thickness_at(cube, Vector(-10, 0, 0), Vector(1, 0, 0)) == pytest.approx(
         20.0, abs=0.02
     )
+
+
+def test_wall_thickness_at_zero_direction_abstains() -> None:
+    assert wall_thickness_at(Box(20, 20, 20), Vector(0, 0, 0), Vector(0, 0, 0)) is None
+
+
+def test_wall_thickness_at_abstains_when_line_meets_no_solid() -> None:
+    cube = Box(20, 20, 20)
+    assert wall_thickness_at(cube, Vector(-30, 100, 0), Vector(1, 0, 0)) is None  # misses
+    assert wall_thickness_at(Rectangle(10, 10), Vector(0, 0, 0), Vector(0, 0, 1)) is None  # 2-D
+
+
+def test_wall_thickness_at_rejects_malformed_point() -> None:
+    cube = Box(20, 20, 20)
+    for bad in ((1, 2), (1, 2, 3, 4), "xyz"):
+        with pytest.raises((TypeError, ValueError)):
+            wall_thickness_at(cube, bad, Vector(1, 0, 0))
