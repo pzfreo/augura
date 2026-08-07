@@ -18,6 +18,7 @@ from build123d import (
     Ellipse,
     Face,
     Plane,
+    Polygon,
     Pos,
     Rot,
     Shape,
@@ -291,17 +292,15 @@ def test_filleted_roof_junction_still_anchors_a_bridge() -> None:
     assert bridge.severity is Severity.INFO
 
 
-def test_window_through_a_curved_wall_still_bridges() -> None:
-    # The window's two unanchored sides follow the wall, so they fan slightly
-    # rather than running exactly parallel and a line at the very edge of the
-    # ceiling does have one end unheld. That sliver is 0.01 mm here, against the
-    # 0.65 mm band left by a roof whose supports genuinely stop short — the two
-    # cases the tolerance has to separate, and this is the near side of it.
-    tube = Pos(0, 0, 20) * (Cylinder(radius=20, height=40) - Cylinder(radius=18, height=40))
-    # The slot cuts a window in each side of the tube.
-    bridges = analyze(cast(Shape[Any], tube - Pos(0, 0, 20) * Box(3, 60, 6))).bridges
-    assert len(bridges) == 2
-    assert all("3.0 mm span" in b.message for b in bridges)
+def test_window_through_a_tapered_wall_still_bridges() -> None:
+    # The window's unanchored sides are not quite parallel, so a line at the very
+    # edge of the ceiling has one end unheld. That band is far narrower than the
+    # one a roof whose supports stop short leaves, which is the distinction the
+    # tolerance draws — this pins its near side.
+    profile = Polygon((-20, -1), (20, -0.9), (20, 0.9), (-20, 1), align=None)
+    wall = extrude(profile, 12)
+    (bridge,) = analyze(cast(Shape[Any], wall - Pos(0, 0, 6) * Box(3, 20, 6))).bridges
+    assert "3.0 mm span" in bridge.message
 
 
 def test_ceiling_supported_only_along_a_comb_of_ribs_is_measured_between_them() -> None:
@@ -315,6 +314,28 @@ def test_ceiling_supported_only_along_a_comb_of_ribs_is_measured_between_them() 
         comb = comb + Pos(-9 + index * 2.25, 0, 4) * Box(1, 10, 8)
     (bridge,) = analyze(cast(Shape[Any], block - comb)).bridges
     assert "4.2 mm span" in bridge.message
+
+
+def test_converging_roof_is_not_rescued_by_curving_its_free_edge() -> None:
+    # Same roof, its unsupported edge a gentle arc rather than a line. A curved
+    # boundary is cut into many short pieces, so a wedge that clears the tolerance
+    # in every individual piece must still fail on the whole. Judging by the widest
+    # single piece reported this as bridging; the safety verdict must not depend on
+    # how the edge happens to be drawn.
+    arc = Edge.make_spline([(2, 2, 5), (0, 1.52, 5), (-2, 1, 5)])
+    outline = Wire(
+        [
+            Edge.make_line((-2, -2, 5), (2, -2, 5)),
+            Edge.make_line((2, -2, 5), (2, 2, 5)),
+            arc,
+            Edge.make_line((-2, 1, 5), (-2, -2, 5)),
+        ]
+    )
+    roof = Solid.extrude(Face(outline), Vector(0, 0, 1))
+    part = roof + Pos(-2.25, -0.5, 2.5) * Box(0.52, 3, 5) + Pos(2.25, 0, 2.5) * Box(0.52, 4, 5)
+    report = analyze(cast(Shape[Any], part))
+    assert report.bridges == ()
+    assert any("no bridge direction" in o.message for o in report.overhangs)
 
 
 def test_roof_whose_supports_converge_is_not_a_bridge() -> None:

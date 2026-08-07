@@ -84,11 +84,13 @@ _SCAN_INSET = 1e-9
 # could still leave only a sliver unheld. Purely a cost filter — anything it lets
 # through is measured properly by the scan, which is what decides.
 _GRAZING = 0.3
-# How wide a band of unheld ceiling, in mm, still counts as a sliver rather than
-# a corner needing support. The one tolerance here that is a physical judgement
-# rather than geometry or float noise: measured cases sit two orders of magnitude
-# either side of it — a window through a curved wall leaves 0.010 mm, a roof whose
-# supports stop short leaves 0.65 mm.
+# How wide a band of unheld ceiling, in mm, still counts as a sliver rather than a
+# corner needing support. Whether such a band actually prints depends on extrusion
+# width, which is process context this module does not have and must not invent
+# (SPEC.md), so the value is set to over-warn rather than to sit midway: a window
+# through a curved wall leaves 0.12 mm and is reported as needing support, where a
+# roof whose supports stop short leaves 0.98 mm. Deriving it from a declared nozzle
+# would let the curved case through honestly.
 _SLIVER_BAND = 0.1
 # Ceilings this detailed get described more coarsely for the chord scan, which is
 # quadratic in boundary segments and runs once per direction. A lid carrying a
@@ -135,8 +137,13 @@ def _has_material(
 
 
 def _step_count(edge: Any) -> int:
-    """How many pieces of ``_SAMPLE_STEP`` this edge covers."""
-    return max(1, min(_MAX_SAMPLES, math.ceil(float(edge.length) / _SAMPLE_STEP)))
+    """How many pieces of ``_SAMPLE_STEP`` this edge covers.
+
+    Uncapped, unlike the geometric sampling: the cap is there to keep the chord
+    scan affordable, and applying it here would stretch the probe spacing on a
+    long edge until a gap in the material under it could pass between probes.
+    """
+    return max(1, math.ceil(float(edge.length) / _SAMPLE_STEP))
 
 
 def _sample_count(edge: Any) -> int:
@@ -275,6 +282,7 @@ def _bridge_run(
     loose = 0.0
     for lower, upper in zip(levels, levels[1:], strict=False):
         gap = upper - lower
+        unheld = False
         for scan in (lower + gap * _SCAN_INSET, upper - gap * _SCAN_INSET):
             crossings = sorted(
                 (u0 + (scan - v0) / (v1 - v0) * (u1 - u0), anchored)
@@ -286,7 +294,12 @@ def _bridge_run(
                 if entry[1] and leave[1]:
                     longest = max(longest, leave[0] - entry[0])
                 else:
-                    loose = max(loose, gap)
+                    unheld = True
+        if unheld:
+            # Accumulated, not maxed: a curved boundary is cut into many short
+            # pieces, and a wedge that clears the tolerance in every single piece
+            # still leaves the whole wedge unheld.
+            loose += gap
     # Unanchored boundary that merely grazes the direction leaves a sliver of
     # ceiling unheld — a window through a tapered or curved wall does this and
     # bridges in practice. A roof whose supports genuinely stop short leaves a

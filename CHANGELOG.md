@@ -57,17 +57,25 @@ between releases `pyproject.toml` carries a `.devN` suffix.
   where it meets the ceiling and falls away as `sqrt(2*R*depth)`: any fillet over 0.05 mm read
   as open air and switched bridging off, which covers most real parts. Fillets up to 5 mm now
   read as anchors; beyond that the ceiling is reported as needing support.
-- **A shape with no solid no longer claims a verdict.** Anchors are found by classifying points
-  against solids, so surface-only input had every probe come back empty and every ceiling
-  declared unbridgeable — a confident answer resting on no evidence. It now reports the ceiling
-  without a bridge claim. A collapsed or self-crossing outline likewise returns "no direction"
+- **A shape with no solid no longer claims a bridge span.** Anchors are found by classifying
+  points against solids, so surface-only input had every probe come back empty and every ceiling
+  declared unbridgeable — "no bridge direction", a confident answer resting on no evidence. Such
+  a ceiling is still reported as needing support, but without the span or the claim about
+  direction. A collapsed or self-crossing outline likewise returns "no direction"
   rather than a zero-length span, which read as "no support needed".
 - **Bounded cost.** The chord scan is quadratic in boundary segments and runs once per
   direction, so a lid carrying a grid of bosses — one face with a hundred-odd inner wires —
   took 99 s. Very detailed ceilings are now described more coarsely for the scan and get fewer
-  directions tried; that lid takes 2.5 s. Both limits can only lengthen a reported span, never
-  shorten it, and neither affects anchor probing.
-- Known limits, in the order they are likely to bite. A ceiling with a **hole through it**
+  directions tried; that lid takes 2.5 s. Neither affects anchor probing. Dropping directions
+  can only lengthen a reported span; drawing the outline more coarsely inscribes it slightly
+  further inside the true boundary, which like any inscribed polyline can shorten it (#60).
+- Known limits, in the order they are likely to bite. **A window through a curved wall is
+  reported as needing support.** Its unanchored sides fan slightly, so lines at the very edge of
+  the ceiling have one end unheld — 0.12 mm of band, against the 0.98 mm left by a roof whose
+  supports genuinely stop short. Whether that sliver bridges depends on extrusion width, which
+  is process context this module does not have and must not invent, so the cut-off between them
+  is set to over-warn (#63). A window through a *drafted or tapered* wall leaves far less and
+  still bridges. A ceiling with a **hole through it**
   treats the hole's rim as unanchored, when a bridge line should pass over it and land on the
   far side, so the annular step of a counterbore is reported as needing support (#58).
   Directions are tried every 5 degrees, measured from the global axes, so a part rotated about
