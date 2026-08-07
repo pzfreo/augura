@@ -24,13 +24,13 @@ from augura import analyze
 DATA = Path(__file__).parent / "data" / "real_world"
 
 REAL_WORLD = [
-    ("framework_expansion_card_threadedinsert.stp", 6),
-    ("cubotino_cover.stp", 1),
+    ("framework_expansion_card_threadedinsert.stp", 6, 10),
+    ("cubotino_cover.stp", 1, 0),
 ]
 
 
-@pytest.mark.parametrize(("filename", "n_solids"), REAL_WORLD)
-def test_real_world_step_analyses(filename: str, n_solids: int) -> None:
+@pytest.mark.parametrize(("filename", "n_solids", "n_bridges"), REAL_WORLD)
+def test_real_world_step_analyses(filename: str, n_solids: int, n_bridges: int) -> None:
     shape = import_step(DATA / filename)
     assert len(shape.solids()) == n_solids
 
@@ -43,6 +43,10 @@ def test_real_world_step_analyses(filename: str, n_solids: int) -> None:
     # Both parts are valid closed solids; degenerated edges (cone apexes,
     # sphere poles) must not be reported as non-manifold.
     assert "not_manifold" not in kinds
+    # Bridge detection turns on which side of a ceiling edge the anchor probe
+    # goes, and imported geometry is the only place here where edges come in both
+    # handednesses — a probe stuck on one side reads 12 bridges, the other 8.
+    assert len(report.bridges) == n_bridges
     # Every finding must be explainable: it carries a human-readable message.
     for finding in report.findings:
         assert finding.message

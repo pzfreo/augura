@@ -10,21 +10,24 @@ from typing import Any, cast
 
 import pytest
 from build123d import (
+    Axis,
     Box,
     Circle,
     Cylinder,
     Edge,
     Ellipse,
     Face,
+    Plane,
     Pos,
     Rot,
     Shape,
+    Shell,
     Solid,
     Wire,
     extrude,
 )
 
-from augura import Severity, analyze, orientation_scores
+from augura import Severity, analyze, find_overhangs, orientation_scores
 from tests.fixtures import CANTILEVER, FLAT_PLATE
 
 
@@ -187,7 +190,7 @@ def test_round_flange_underside_has_no_bridge_direction() -> None:
     cap = Pos(0, 0, 11) * Cylinder(radius=6, height=2)
     report = analyze(cast(Shape[Any], stem + cap))
     assert report.bridges == ()
-    assert any("no bridge direction" in o.message for o in report.overhangs)
+    assert any("Flat" in o.message for o in report.overhangs)
 
 
 def test_span_ignores_how_a_straight_edge_is_stored() -> None:
@@ -261,6 +264,68 @@ def test_ceiling_supported_only_in_patches_still_needs_support() -> None:
     report = analyze(cast(Shape[Any], part))
     assert report.bridges == ()
     assert any("no bridge direction" in o.message for o in report.overhangs)
+
+
+def test_tilted_ceiling_probes_for_anchors_at_its_own_height() -> None:
+    # A ceiling may lean up to _FLAT_TOL and still count as flat. Probing every
+    # anchor at one height taken from the face's lowest corner would sit well
+    # below the ceiling at its high end, where open air reads as solid material.
+    # The +y wall here stops short over half the length, so it cannot bridge.
+    block = Pos(0, 0, 20) * Box(120, 40, 40)
+    void = Rot(0, -0.9, 0) * (Pos(0, 0, 10) * Box(140, 4, 20))
+    missing_wall = Pos(30, 5, 22.25) * Box(60, 6, 5.5)
+    report = analyze(cast(Shape[Any], block - void - missing_wall))
+    assert report.bridges == ()
+
+
+def test_filleted_roof_junction_still_anchors_a_bridge() -> None:
+    # Where a fillet meets the ceiling the wall is horizontal, falling away as
+    # sqrt(2*R*depth). A probe that drops too far before reaching out misses it
+    # and reads every anchored edge as open air, which would switch bridging off
+    # for most real parts — rounded pocket roofs are everywhere.
+    void = Pos(0, 0, 5) * Box(20, 6, 10)
+    void = void.fillet(1.0, void.edges().filter_by(Plane.XY).group_by(Axis.Z)[-1])
+    (bridge,) = analyze(cast(Shape[Any], Pos(0, 0, 10) * Box(40, 40, 20) - void)).bridges
+    assert bridge.severity is Severity.INFO
+
+
+def test_window_through_a_curved_wall_still_bridges() -> None:
+    # The window's two long sides follow the wall, so they fan slightly instead of
+    # running exactly parallel. Demanding exact parallelism would call a 3 mm port
+    # through a tube unbridgeable.
+    tube = Pos(0, 0, 20) * (Cylinder(radius=20, height=40) - Cylinder(radius=18, height=40))
+    # The slot cuts a window in each side of the tube.
+    bridges = analyze(cast(Shape[Any], tube - Pos(0, 0, 20) * Box(3, 60, 6))).bridges
+    assert len(bridges) == 2
+    assert all("3.0 mm span" in b.message for b in bridges)
+
+
+def test_ceiling_far_too_large_to_bridge_is_settled_without_probing() -> None:
+    # A ceiling holding a chord of at least area/reach cannot bridge whichever way
+    # lines run, so the verdict is reached before any anchor probe or chord sweep.
+    # Without that shortcut a lid carrying a grid of bosses — every boss an inner
+    # wire — takes the sweep quadratic in the number of bosses.
+    lid = Pos(0, 0, 10) * Box(100, 100, 20) - Pos(0, 0, 4) * Box(90, 90, 8)
+    part = lid
+    for i in range(8):
+        for j in range(8):
+            part = part + Pos(-40 + i * 80 / 7, -40 + j * 80 / 7, 4) * Cylinder(
+                radius=1.5, height=8
+            )
+    report = analyze(cast(Shape[Any], part))
+    assert report.bridges == ()
+    assert any("Flat" in o.message and "needs support" in o.message for o in report.overhangs)
+
+
+def test_shape_with_no_solid_does_not_claim_a_bridge_verdict() -> None:
+    # Anchors are found by classifying points against solids. A surface-only STEP
+    # has none, so every probe would come back empty and every ceiling would be
+    # declared unbridgeable — a confident answer built on no evidence.
+    solid = (Pos(0, 0, 10) * Box(30, 40, 20) - Pos(0, 0, 5) * Box(3, 30, 10)).solid()
+    (from_solid,) = [f for f in find_overhangs(solid) if "Flat" in f.message]
+    (from_shell,) = [f for f in find_overhangs(Shell(solid.faces())) if "Flat" in f.message]
+    assert "bridges" in from_solid.message
+    assert "bridge" not in from_shell.message and "needs support" in from_shell.message
 
 
 def test_bridges_do_not_count_as_orientation_support_area() -> None:

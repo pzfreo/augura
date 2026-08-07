@@ -38,12 +38,43 @@ between releases `pyproject.toml` carries a `.devN` suffix.
   imported STEP is full of — behaves exactly like a line instead of being written off as
   uncurved. Ceilings bounded only by curves are handled directly rather than falling back
   to a bounding box, so a 20 x 4 mm elliptical pocket reads 4 mm at any rotation.
-- Known limits: boundaries are sampled, so support gaps much finer than a millimetre can
-  be stepped over, and a tightly curved boundary is measured on its inscribed polyline —
-  a 0.1 mm-wide annular slot reads 2.7 mm against a true 2.8 mm. Spans over strongly
-  non-convex ceilings are exact only for the directions tried (every 5 degrees, plus one
-  across each stretch of boundary); untried directions can only make the reported span
-  larger, never smaller.
+- **Anchor probing corrected against three false readings** (#55). Probes were dropped from
+  one height taken from the face's lowest corner, but a ceiling may lean up to a degree and
+  still count as flat — over a long ceiling that puts the probe well below the far end, where
+  open air reads as solid. That produced a genuine *unsafe* verdict, a tilted ceiling with a
+  missing wall reported as "bridges, no support needed". Each probe now drops from its own
+  point. Probes also reached out before dropping far enough for a **filleted** roof junction,
+  which is horizontal where it meets the ceiling and falls away as `sqrt(2*R*depth)`: any
+  fillet over 0.05 mm read as open air and switched bridging off, which covers most real
+  parts. And bridge lines had to run *exactly* parallel to every unanchored stretch, so a
+  window through a curved, drafted or tapered wall was called unbridgeable; stretches may now
+  fan up to 20 degrees, which still rejects a slot open at one end (90 degrees) and a round
+  flange (170 degrees).
+- **Bounded cost.** A ceiling whose area over its reach already exceeds `max_bridge` holds a
+  chord at least that long whichever way lines run, so it cannot bridge and is settled before
+  any probe or chord sweep. Without it a lid carrying a grid of bosses — each boss an inner
+  wire — went quadratic: 144 bosses took 13.6 s, now 0.26 s. `analyze()` is roughly at parity
+  with the previous release on the bundled fixtures; `orientation_scores` is slower.
+- **A shape with no solid no longer claims a verdict.** Anchors are found by classifying
+  points against solids, so surface-only input had every probe come back empty and every
+  ceiling declared unbridgeable — a confident answer resting on no evidence. It now reports
+  the ceiling without a bridge claim. A collapsed or self-crossing outline likewise returns
+  "no direction" rather than a zero-length span, which read as "no support needed".
+- Known limits, in the order they are likely to bite. A ceiling with a **hole through it**
+  treats the hole's rim as unanchored and so as direction-constraining, when a bridge line
+  should simply pass over it and land on the far side — the annular step of a counterbore is
+  reported as needing support. Directions are tried every 5 degrees plus one across each
+  stretch of boundary, and only the twelve narrowest-looking reach the chord sweep, which on
+  a ceiling with an island can over-report by ~20%. Boundaries are walked at `_SAMPLE_STEP`
+  up to a cap of 64 points per edge, so a very long edge is sampled coarser than a millimetre
+  and finer support gaps can be stepped over. Tightly curved boundaries are measured on an
+  inscribed polyline: normally under 2% low, but on a *large* curved boundary the polylines
+  of a narrow slot can cross, and the span is then unreliable in either direction. Every
+  untried direction and every truncation can only make the reported span larger — the
+  inscribed polyline is the one approximation that can make it smaller. Finally, an anchor is
+  material that is *present*, not material that is itself supported, so a wall reachable only
+  over another bridge still counts (as it did before).
+
 
 ## 0.1.7
 

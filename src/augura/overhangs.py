@@ -58,12 +58,18 @@ _FLATNESS_TOL = 1e-6
 # How far to step sideways off a ceiling edge when probing for anchor material.
 # Far below any printable wall, far above BREP tolerance.
 _PROBE_OUT = 1e-2
-# How far to step below the ceiling plane when probing. Much smaller than
-# ``_PROBE_OUT`` so a wall that slopes as it descends is still hit; probing short
-# only ever loses an anchor, which errs toward warning the user.
-_PROBE_DOWN = 1e-3
-# Two directions whose 2D cross product is under this count as parallel.
-_PARALLEL_TOL = 1e-6
+# How far to step below the ceiling when probing. Far shallower than
+# ``_PROBE_OUT`` because the wall a bridge lands on rarely drops away squarely: a
+# filleted roof junction is horizontal where it meets the ceiling and falls away
+# as sqrt(2*R*depth), so material is only found within ``_PROBE_OUT**2 / (2*R)``
+# of the ceiling. At these values a roof fillet up to 5 mm still reads as an
+# anchor, which covers anything a pocket is likely to carry.
+_PROBE_DOWN = 1e-5
+# How far apart the unanchored stretches may point and still share one bridge
+# direction, in degrees. Exact parallelism is the wrong test: a window through a
+# curved or drafted wall has free sides that fan slightly, and it bridges. Wide
+# fans do not — a slot open at one end spreads 90 deg, a round flange 170 deg.
+_SPREAD_TOL_DEG = 20.0
 # Point-classification tolerance, matching ``Shape.is_inside``'s default.
 _INSIDE_TOL = 1e-6
 # A probe point this far from the ceiling face has stepped off it. A step that
@@ -166,22 +172,20 @@ def _outward_sign(edge: Any, face: Any) -> float:
     return -1.0 if face.distance_to(probe) < _OUTSIDE_TOL else 1.0
 
 
-def _bridge_heading(
-    face: Any, z_plane: float, classifiers: list[BRepClass3d_SolidClassifier]
-) -> tuple[bool, tuple[float, float] | None]:
-    """Which way bridge lines have to run over this ceiling.
+def _free_angles(face: Any, classifiers: list[BRepClass3d_SolidClassifier]) -> list[float] | None:
+    """Headings, in degrees, of the boundary stretches with nothing below them.
 
-    Returns ``(False, None)`` when nothing works, ``(True, None)`` when the
-    ceiling is anchored the whole way round so any direction does, and
-    ``(True, heading)`` when the unanchored stretches pin it to one.
+    ``None`` once they fan too wide for any single bridge direction, which is
+    checked off after each edge so a hopeless ceiling stops being probed early.
 
     Walks each edge at ``_SAMPLE_STEP``, probing from the point on the curve
     itself rather than from a chord across it — an inscribed chord sits inside a
     tight curve by more than the probe reaches, which would read as open air.
-    A stretch with nothing to land on forces bridge lines parallel to it, so two
-    such stretches at an angle to each other settle the answer immediately.
+    Each probe drops from its own point rather than from one height for the whole
+    face: ``_FLAT_TOL`` admits a degree of tilt, which over a long ceiling puts a
+    shared plane well below the far end and turns open air into an anchor.
     """
-    heading: tuple[float, float] | None = None
+    angles: list[float] = []
     for edge in face.edges():
         count = _sample_count(edge, _MIN_PROBES)
         sign = _outward_sign(edge, face)
@@ -190,18 +194,36 @@ def _bridge_heading(
             point = edge.position_at(position)
             tangent = edge.tangent_at(position)
             out_x, out_y = tangent.Y * sign, -tangent.X * sign
-            if _has_material(
+            if not _has_material(
                 classifiers,
                 point.X + out_x * _PROBE_OUT,
                 point.Y + out_y * _PROBE_OUT,
-                z_plane - _PROBE_DOWN,
+                point.Z - _PROBE_DOWN,
             ):
-                continue
-            if heading is None:
-                heading = (tangent.X, tangent.Y)
-            elif abs(heading[0] * tangent.Y - heading[1] * tangent.X) > _PARALLEL_TOL:
-                return False, None
-    return True, heading
+                angles.append(math.degrees(math.atan2(tangent.Y, tangent.X)) % 180.0)
+        if angles and _heading_cone(angles) is None:
+            return None
+    return angles
+
+
+def _heading_cone(angles: list[float]) -> tuple[float, float] | None:
+    """The narrowest fan of directions covering every unanchored stretch.
+
+    Returns ``(start, spread)`` in degrees, or ``None`` when the stretches point
+    too many ways for any single bridge direction to run alongside them all.
+    Headings are directions, not vectors, so they live on a half turn and the
+    fan is whatever the widest gap between them leaves over.
+    """
+    ordered = sorted(angles)
+    gaps = [
+        (later - earlier, earlier) for earlier, later in zip(ordered, ordered[1:], strict=False)
+    ]
+    gaps.append((ordered[0] + 180.0 - ordered[-1], ordered[-1]))
+    widest, before_gap = max(gaps)
+    spread = 180.0 - widest
+    if spread > _SPREAD_TOL_DEG:
+        return None
+    return before_gap + widest, spread
 
 
 def _extent(segments: list[tuple[float, float, float, float]], dx: float, dy: float) -> float:
@@ -270,7 +292,7 @@ def _frange(start: float, stop: float, step: float) -> list[float]:
 
 
 def _bridge_span(
-    face: Any, classifiers: list[BRepClass3d_SolidClassifier], z_plane: float
+    face: Any, classifiers: list[BRepClass3d_SolidClassifier], max_bridge: float
 ) -> float | None:
     """The unsupported distance a bridge over this flat ceiling has to cross.
 
@@ -290,18 +312,41 @@ def _bridge_span(
     width (issue #55). A bounding box also makes the answer depend on how the part
     happens to sit relative to the global axes, which it must not.
     """
-    feasible, heading = _bridge_heading(face, z_plane, classifiers)
-    if not feasible:
+    box = face.bounding_box()
+    reach = math.hypot(box.size.X, box.size.Y)
+    if reach == 0:
         return None
-
     segments = _outline(face)
     if len(segments) < 3:
         return None
-    if heading is not None:
-        return _longest_chord(segments, *heading)
 
-    candidates = sorted(_directions(segments), key=lambda d: _extent(segments, *d))
-    return min(_longest_chord(segments, *d) for d in candidates[:_MAX_DIRECTIONS])
+    # A region of this area inside a reach this small holds a chord at least
+    # area/reach long whichever way it runs, so no direction can bridge it. Worth
+    # testing first: it costs nothing, and it keeps the quadratic chord sweep and
+    # every anchor probe off ceilings whose verdict is already settled.
+    if face.area / reach > max_bridge:
+        return min(_extent(segments, *d) for d in _directions(segments))
+
+    angles = _free_angles(face, classifiers)
+    if angles is None:
+        return None
+    if angles:
+        cone = _heading_cone(angles)
+        if cone is None:
+            return None
+        start, spread = cone
+        # Any direction across the fan is a candidate, so report the worst of them.
+        span = max(
+            _longest_chord(segments, math.cos(math.radians(a)), math.sin(math.radians(a)))
+            for a in (start, start + spread / 2, start + spread)
+        )
+    else:
+        ranked = sorted(_directions(segments), key=lambda d: _extent(segments, *d))
+        span = min(_longest_chord(segments, *d) for d in ranked[:_MAX_DIRECTIONS])
+
+    # A chord of zero means the scan found no interior at all — a collapsed or
+    # self-crossing outline, not a ceiling that bridges for free.
+    return span if span > 0 else None
 
 
 def find_overhangs(
@@ -358,8 +403,8 @@ def find_overhangs(
 
         # A flat, wall-bounded ceiling short enough to bridge needs no support —
         # report it as an informational bridge, not an overhang warning.
-        if beta < _FLAT_TOL:
-            span = _bridge_span(face, classifiers, face.bounding_box().min.Z)
+        if beta < _FLAT_TOL and classifiers:
+            span = _bridge_span(face, classifiers, max_bridge)
             if span is not None and span <= max_bridge:
                 findings.append(
                     Finding(
@@ -378,6 +423,10 @@ def find_overhangs(
                 if span is None
                 else f"{flat} {span:.1f} mm span needs support"
             )
+        elif beta < _FLAT_TOL:
+            # No solid to probe against, so whether it bridges cannot be told
+            # apart from a ceiling that genuinely has nothing under it.
+            message = f"Flat {area:.1f} mm2 ceiling at {beta:.1f} deg needs support"
         else:
             message = (
                 f"Downward face at {beta:.1f} deg from horizontal ({area:.1f} mm2) needs support"
