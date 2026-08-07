@@ -284,7 +284,8 @@ def test_filleted_roof_junction_still_anchors_a_bridge() -> None:
     # sqrt(2*R*depth). A probe that drops too far before reaching out misses it
     # and reads every anchored edge as open air, which would switch bridging off
     # for most real parts — rounded pocket roofs are everywhere.
-    void = Pos(0, 0, 5) * Box(20, 6, 10)
+    # .solid() first: filleting a Box subclass tries to rebuild it on build123d 0.10.
+    void = (Pos(0, 0, 5) * Box(20, 6, 10)).solid()
     void = void.fillet(1.0, void.edges().filter_by(Plane.XY).group_by(Axis.Z)[-1])
     (bridge,) = analyze(cast(Shape[Any], Pos(0, 0, 10) * Box(40, 40, 20) - void)).bridges
     assert bridge.severity is Severity.INFO
