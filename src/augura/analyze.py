@@ -56,7 +56,7 @@ def analyze(
         min_feature: Smallest vertical feature (mm) to flag as capping the layer
             height. Features at or above this threshold are not reported. Has no
             effect on mesh (STL) inputs — the mesh path has no thin-feature check.
-        max_bridge: A flat ceiling whose narrowest span is at or below this many
+        max_bridge: A flat ceiling whose bridge span is at or below this many
             mm is reported as a bridgeable ``bridge`` (INFO) instead of an
             ``overhang`` (WARNING). BREP path only; the mesh path does not bridge-check.
 
