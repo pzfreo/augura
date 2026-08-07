@@ -23,6 +23,7 @@ from build123d import (
     Shape,
     Shell,
     Solid,
+    Vector,
     Wire,
     extrude,
 )
@@ -289,15 +290,32 @@ def test_filleted_roof_junction_still_anchors_a_bridge() -> None:
     assert bridge.severity is Severity.INFO
 
 
-def test_window_through_a_curved_wall_still_bridges() -> None:
-    # The window's two long sides follow the wall, so they fan slightly instead of
-    # running exactly parallel. Demanding exact parallelism would call a 3 mm port
-    # through a tube unbridgeable.
-    tube = Pos(0, 0, 20) * (Cylinder(radius=20, height=40) - Cylinder(radius=18, height=40))
-    # The slot cuts a window in each side of the tube.
-    bridges = analyze(cast(Shape[Any], tube - Pos(0, 0, 20) * Box(3, 60, 6))).bridges
-    assert len(bridges) == 2
-    assert all("3.0 mm span" in b.message for b in bridges)
+def test_roof_whose_supports_converge_is_not_a_bridge() -> None:
+    # The two unsupported sides of this roof converge by 14 degrees, leaving a
+    # corner no straight line reaches with both ends held. Judging a direction by
+    # which way the boundary points admits it; judging by where the lines land
+    # does not. Reported as bridgeable it would be an unsafe answer — the print
+    # fails rather than merely wasting support material.
+    corners = [(-2, -2, 5), (2, -2, 5), (2, 2, 5), (-2, 1, 5)]
+    roof = Solid.extrude(Face(Wire.make_polygon(corners, close=True)), Vector(0, 0, 1))
+    part = roof + Pos(-2.25, -0.5, 2.5) * Box(0.52, 3, 5) + Pos(2.25, 0, 2.5) * Box(0.52, 4, 5)
+    report = analyze(cast(Shape[Any], part))
+    assert report.bridges == ()
+    assert any("no bridge direction" in o.message for o in report.overhangs)
+
+
+def test_span_does_not_depend_on_the_threshold_it_is_compared_against() -> None:
+    # max_bridge decides the verdict, never the geometry. A ceiling settled by the
+    # cheap area/reach bound says so rather than passing that bound off as a
+    # measured span, which would move with the caller's threshold.
+    block = Pos(0, 0, 5) * Box(30, 30, 10)
+    arms = Pos(0, -8.5, 4) * Box(20, 3, 8) + Pos(-8.5, 0, 4) * Box(3, 20, 8)
+    part = cast(Shape[Any], block - arms)
+    assert "4.2 mm span" in analyze(part).bridges[0].message
+    (measured,) = analyze(part, max_bridge=4.0).overhangs
+    assert "4.2 mm span" in measured.message
+    (bounded,) = analyze(part, max_bridge=3.0).overhangs
+    assert "at least" in bounded.message
 
 
 def test_ceiling_far_too_large_to_bridge_is_settled_without_probing() -> None:

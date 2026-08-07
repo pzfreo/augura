@@ -42,17 +42,12 @@ _ANGLE_TOL = 1e-3
 _FLAT_TOL = 1.0
 # Boundary sampling step, in mm. Straight edges are cut up too, not just curved
 # ones, so a gap in the material under an otherwise straight edge is not stepped
-# over. The floor keeps a tight curve's polyline hugging it: an inscribed chord
-# falls inside the true boundary, which shortens spans if left coarse.
+# over. The floor keeps a tight curve's polyline hugging it, since an inscribed
+# chord falls inside the true boundary and would shorten spans if left coarse;
+# the cap stops a long edge from dominating the chord scan, which is quadratic.
 _SAMPLE_STEP = 1.0
+_MIN_SAMPLES = 24
 _MAX_SAMPLES = 64
-# Anchor probing and polyline fidelity want different things from the same walk.
-# Probes cost a solid classification each, so they follow the step alone; the
-# polyline is only positions, so a tight curve can afford a floor that keeps its
-# chords hugging it. An inscribed chord falls inside the true boundary, which
-# shortens spans if left coarse.
-_MIN_PROBES = 3
-_MIN_OUTLINE_SAMPLES = 24
 # A point further than this off the line between its neighbours is a real corner.
 _FLATNESS_TOL = 1e-6
 # How far to step sideways off a ceiling edge when probing for anchor material.
@@ -65,11 +60,6 @@ _PROBE_OUT = 1e-2
 # of the ceiling. At these values a roof fillet up to 5 mm still reads as an
 # anchor, which covers anything a pocket is likely to carry.
 _PROBE_DOWN = 1e-5
-# How far apart the unanchored stretches may point and still share one bridge
-# direction, in degrees. Exact parallelism is the wrong test: a window through a
-# curved or drafted wall has free sides that fan slightly, and it bridges. Wide
-# fans do not — a slot open at one end spreads 90 deg, a round flange 170 deg.
-_SPREAD_TOL_DEG = 20.0
 # Point-classification tolerance, matching ``Shape.is_inside``'s default.
 _INSIDE_TOL = 1e-6
 # A probe point this far from the ceiling face has stepped off it. A step that
@@ -79,9 +69,23 @@ _OUTSIDE_TOL = _PROBE_OUT / 2
 # boundary itself suggests: the best direction over a non-convex ceiling need be
 # neither along an edge nor across one.
 _DIRECTION_STEP_DEG = 5.0
-# Directions that survive to the chord sweep, cheapest-looking first. Sweeping
-# fewer can only over-report the span, since the span is a minimum over them.
-_MAX_DIRECTIONS = 12
+# A direction and its reverse are the same bridge direction, so directions live
+# on a half turn rather than a full one.
+_HALF_TURN_DEG = 180.0
+# Decimal places two directions must agree to before they count as the same one.
+# Finer than the fan step by orders of magnitude, so it only ever folds together
+# directions that arrived from different sources.
+_DIRECTION_DIGITS = 6
+# Where to place a scan line inside the gap between two boundary vertices, as a
+# fraction of that gap. Any point strictly inside gives the same crossings; this
+# sits hard against the ends, where the longest run is.
+_SCAN_INSET = 1e-9
+# How far, relative to its own length, a boundary segment may stray across a scan
+# line and still count as running alongside it. A line running beside a segment
+# never lands on it, so such a segment terminates nothing. The bound is float
+# noise rather than a modelling choice: a direction read off the boundary is
+# parallel to that boundary only to within rounding.
+_ALONGSIDE_EPS = 1e-9
 
 
 def _classifiers(shape: Shape[Any]) -> list[BRepClass3d_SolidClassifier]:
@@ -107,28 +111,107 @@ def _has_material(
     return False
 
 
-def _outline(face: Any) -> list[tuple[float, float, float, float]]:
-    """The ceiling's boundary as 2D segments ``(x0, y0, x1, y1)``.
+def _step_count(edge: Any) -> int:
+    """How many pieces of ``_SAMPLE_STEP`` this edge covers."""
+    return max(1, min(_MAX_SAMPLES, math.ceil(float(edge.length) / _SAMPLE_STEP)))
+
+
+def _sample_count(edge: Any) -> int:
+    """How finely to describe this edge geometrically — never below the floor that
+    keeps a tight curve's polyline hugging it."""
+    return max(_MIN_SAMPLES, _step_count(edge))
+
+
+def _outward_sign(edge: Any, face: Any) -> float:
+    """Which perpendicular of the edge tangent points out of the ceiling.
+
+    Probing the wrong way would find whatever fills the space *under* the ceiling.
+    The step that leaves the face is the outward one: it lands clear of the face
+    rather than on it. Handedness holds along a boundary edge, so one test settles
+    the whole edge.
+    """
+    point = edge.position_at(0.5)
+    tangent = edge.tangent_at(0.5)
+    probe = Vector(point.X + tangent.Y * _PROBE_OUT, point.Y - tangent.X * _PROBE_OUT, point.Z)
+    return -1.0 if face.distance_to(probe) < _OUTSIDE_TOL else 1.0
+
+
+def _boundary(
+    face: Any, classifiers: list[BRepClass3d_SolidClassifier]
+) -> list[tuple[float, float, float, float, bool]]:
+    """The ceiling's boundary as 2D segments, each flagged with what is under it.
 
     Every edge — straight or curved — is walked at a fixed step, so nothing here
-    depends on how a curve happens to be represented. A spline that runs dead
+    depends on how a curve happens to be represented: a spline running dead
     straight yields collinear segments and behaves exactly like a line, which
     matters because imported STEP geometry is full of them.
+
+    Each segment is probed just beyond itself and just below the ceiling for the
+    material a bridge line could land on. Probes drop from their own point on the
+    curve rather than from a chord across it, or from one height for the whole
+    face: an inscribed chord sits inside a tight curve by more than the probe
+    reaches, and a ceiling may lean up to ``_FLAT_TOL``, which over a long face
+    puts a shared height below the far end where open air reads as solid.
     """
-    segments: list[tuple[float, float, float, float]] = []
+    boundary: list[tuple[float, float, float, float, bool]] = []
     for edge in face.edges():
-        count = _sample_count(edge, _MIN_OUTLINE_SAMPLES)
-        points = _drop_collinear(
-            [(p.X, p.Y) for p in (edge.position_at(i / count) for i in range(count + 1))]
-        )
-        for (x0, y0), (x1, y1) in zip(points, points[1:], strict=False):
-            if x0 != x1 or y0 != y1:
-                segments.append((x0, y0, x1, y1))
-    return segments
+        count = _sample_count(edge)
+        sign = _outward_sign(edge, face)
+        # Describing the curve and checking what holds it up want different
+        # resolutions. Every probe costs a solid classification, so they follow
+        # the step; the polyline is only positions, so it can afford to be finer.
+        probes = _step_count(edge)
+        anchored = [
+            _probe(edge, (index + 0.5) / probes, sign, classifiers) for index in range(probes)
+        ]
+        points = [edge.position_at(index / count) for index in range(count + 1)]
+        run: list[tuple[float, float, float, float, bool]] = []
+        for index, (start, end) in enumerate(zip(points, points[1:], strict=False)):
+            if start.X == end.X and start.Y == end.Y:
+                continue
+            held = anchored[min(int((index + 0.5) / count * probes), probes - 1)]
+            run.append((start.X, start.Y, end.X, end.Y, held))
+        boundary.extend(_merge_runs(run))
+    return boundary
 
 
-def _sample_count(edge: Any, floor: int) -> int:
-    return max(floor, min(_MAX_SAMPLES, math.ceil(float(edge.length) / _SAMPLE_STEP)))
+def _probe(
+    edge: Any, position: float, sign: float, classifiers: list[BRepClass3d_SolidClassifier]
+) -> bool:
+    """True if there is material just beyond the boundary here to land a bridge on."""
+    point = edge.position_at(position)
+    tangent = edge.tangent_at(position)
+    return _has_material(
+        classifiers,
+        point.X + tangent.Y * sign * _PROBE_OUT,
+        point.Y - tangent.X * sign * _PROBE_OUT,
+        point.Z - _PROBE_DOWN,
+    )
+
+
+def _merge_runs(
+    segments: list[tuple[float, float, float, float, bool]],
+) -> list[tuple[float, float, float, float, bool]]:
+    """Join consecutive segments that run straight on and agree about their anchor.
+
+    Sampling is set by the tightest curve a boundary might hold and by how finely
+    the material under it has to be checked, which leaves a plain straight edge
+    carrying two dozen identical pieces. The chord scan is quadratic in them.
+    Merging works off the geometry, so a spline that happens to run straight thins
+    out exactly like a line, and it stops wherever the anchor state changes so a
+    ceiling supported along only part of an edge keeps that detail.
+    """
+    merged: list[tuple[float, float, float, float, bool]] = []
+    for segment in segments:
+        if merged:
+            x0, y0, _, _, anchored = merged[-1]
+            if anchored == segment[4] and _off_line((x0, y0), segment[2:4], segment[0:2]) <= (
+                _FLATNESS_TOL
+            ):
+                merged[-1] = (x0, y0, segment[2], segment[3], anchored)
+                continue
+        merged.append(segment)
+    return merged
 
 
 def _off_line(
@@ -142,169 +225,98 @@ def _off_line(
     return abs(dx * (start[1] - point[1]) - dy * (start[0] - point[0])) / length
 
 
-def _drop_collinear(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    """Thin a sampled edge back down to its corners.
+def _bridge_run(
+    boundary: list[tuple[float, float, float, float, bool]], dx: float, dy: float
+) -> float | None:
+    """Longest bridge line in this direction, or ``None`` if one would fall.
 
-    Sampling is set by the tightest curve a boundary might hold, which leaves a
-    straight edge carrying two dozen redundant points. They cost nothing to probe
-    for anchors but would multiply the chord sweep, which is quadratic in the
-    number of segments. Works off the geometry, so a spline that happens to run
-    straight thins out exactly like a line.
-    """
-    kept = [points[0]]
-    for index in range(1, len(points) - 1):
-        if _off_line(kept[-1], points[index + 1], points[index]) > _FLATNESS_TOL:
-            kept.append(points[index])
-    kept.append(points[-1])
-    return kept
+    Bridge lines all run one way over a ceiling and each has to land on material
+    at both ends, so the direction only works if *every* line it produces does.
+    Testing where the lines actually land is what settles it — asking instead
+    which way the unanchored boundary points cannot tell a harmless fan from a
+    roof whose sides converge into a corner no line reaches with both ends held.
 
-
-def _outward_sign(edge: Any, face: Any) -> float:
-    """Which perpendicular of the edge tangent points out of the ceiling.
-
-    Probing the wrong way would find whatever fills the space *under* the
-    ceiling. The step that leaves the face is the outward one; handedness is
-    constant along a valid boundary edge, so one test settles the whole edge.
-    """
-    point = edge.position_at(0.5)
-    tangent = edge.tangent_at(0.5)
-    probe = Vector(point.X + tangent.Y * _PROBE_OUT, point.Y - tangent.X * _PROBE_OUT, point.Z)
-    return -1.0 if face.distance_to(probe) < _OUTSIDE_TOL else 1.0
-
-
-def _free_angles(face: Any, classifiers: list[BRepClass3d_SolidClassifier]) -> list[float] | None:
-    """Headings, in degrees, of the boundary stretches with nothing below them.
-
-    ``None`` once they fan too wide for any single bridge direction, which is
-    checked off after each edge so a hopeless ceiling stops being probed early.
-
-    Walks each edge at ``_SAMPLE_STEP``, probing from the point on the curve
-    itself rather than from a chord across it — an inscribed chord sits inside a
-    tight curve by more than the probe reaches, which would read as open air.
-    Each probe drops from its own point rather than from one height for the whole
-    face: ``_FLAT_TOL`` admits a degree of tilt, which over a long ceiling puts a
-    shared plane well below the far end and turns open air into an anchor.
-    """
-    angles: list[float] = []
-    for edge in face.edges():
-        count = _sample_count(edge, _MIN_PROBES)
-        sign = _outward_sign(edge, face)
-        for index in range(count):
-            position = (index + 0.5) / count
-            point = edge.position_at(position)
-            tangent = edge.tangent_at(position)
-            out_x, out_y = tangent.Y * sign, -tangent.X * sign
-            if not _has_material(
-                classifiers,
-                point.X + out_x * _PROBE_OUT,
-                point.Y + out_y * _PROBE_OUT,
-                point.Z - _PROBE_DOWN,
-            ):
-                angles.append(math.degrees(math.atan2(tangent.Y, tangent.X)) % 180.0)
-        if angles and _heading_cone(angles) is None:
-            return None
-    return angles
-
-
-def _heading_cone(angles: list[float]) -> tuple[float, float] | None:
-    """The narrowest fan of directions covering every unanchored stretch.
-
-    Returns ``(start, spread)`` in degrees, or ``None`` when the stretches point
-    too many ways for any single bridge direction to run alongside them all.
-    Headings are directions, not vectors, so they live on a half turn and the
-    fan is whatever the widest gap between them leaves over.
-    """
-    ordered = sorted(angles)
-    gaps = [
-        (later - earlier, earlier) for earlier, later in zip(ordered, ordered[1:], strict=False)
-    ]
-    gaps.append((ordered[0] + 180.0 - ordered[-1], ordered[-1]))
-    widest, before_gap = max(gaps)
-    spread = 180.0 - widest
-    if spread > _SPREAD_TOL_DEG:
-        return None
-    return before_gap + widest, spread
-
-
-def _extent(segments: list[tuple[float, float, float, float]], dx: float, dy: float) -> float:
-    """How far the ceiling reaches along a direction — an upper bound on its chords."""
-    projections = [x * dx + y * dy for x0, y0, x1, y1 in segments for x, y in ((x0, y0), (x1, y1))]
-    return max(projections) - min(projections)
-
-
-def _longest_chord(
-    segments: list[tuple[float, float, float, float]], dx: float, dy: float
-) -> float:
-    """The longest line in this direction that stays inside the ceiling.
-
-    Not the same as the ceiling's extent once it stops being convex: an L-shaped
-    cavity measures its full diagonal end to end, but no single bridge line ever
-    spans more than the width of one arm. Working in a frame where the direction
-    is +u, a scan line's crossings pair up into interior runs, and run lengths
-    vary linearly between one boundary vertex and the next — so the longest run
-    always turns up at a scan line grazing a vertex.
+    Working in a frame where the direction is +u, a scan line's crossings pair up
+    into the runs of ceiling it covers, and run lengths vary linearly between one
+    boundary vertex and the next — so the longest run always turns up at a scan
+    line grazing a vertex, and it is enough to look there.
     """
     turned = [
-        (x0 * dx + y0 * dy, -x0 * dy + y0 * dx, x1 * dx + y1 * dy, -x1 * dy + y1 * dx)
-        for x0, y0, x1, y1 in segments
+        (x0 * dx + y0 * dy, -x0 * dy + y0 * dx, x1 * dx + y1 * dy, -x1 * dy + y1 * dx, anchored)
+        for x0, y0, x1, y1, anchored in boundary
     ]
-    levels = sorted({v for _, v, _, _ in turned} | {v for _, _, _, v in turned})
+    levels = sorted({v for _, v, _, _, _ in turned} | {v for _, _, _, v, _ in turned})
     longest = 0.0
     for lower, upper in zip(levels, levels[1:], strict=False):
         gap = upper - lower
-        for scan in (lower + gap * 1e-9, upper - gap * 1e-9):
+        for scan in (lower + gap * _SCAN_INSET, upper - gap * _SCAN_INSET):
             crossings = sorted(
-                u0 + (scan - v0) / (v1 - v0) * (u1 - u0)
-                for u0, v0, u1, v1 in turned
+                (u0 + (scan - v0) / (v1 - v0) * (u1 - u0), anchored)
+                for u0, v0, u1, v1, anchored in turned
                 if (v0 > scan) != (v1 > scan)
+                and abs(v1 - v0) > _ALONGSIDE_EPS * math.hypot(u1 - u0, v1 - v0)
             )
             for entry, leave in zip(crossings[::2], crossings[1::2], strict=False):
-                longest = max(longest, leave - entry)
-    return longest
+                if not (entry[1] and leave[1]):
+                    return None
+                longest = max(longest, leave[0] - entry[0])
+    return longest or None
 
 
-def _directions(segments: list[tuple[float, float, float, float]]) -> list[tuple[float, float]]:
-    """Bridge directions worth trying over a ceiling that is anchored all round.
+def _directions(
+    boundary: list[tuple[float, float, float, float, bool]],
+) -> list[tuple[float, float]]:
+    """Bridge directions worth trying over a ceiling.
 
-    Every direction is viable there, and the narrowest wins. The candidates are
-    the ones across each stretch of boundary — where a convex ceiling is always
-    narrowest — plus a regular fan, because a non-convex one need not be.
+    The candidates are the ones across each stretch of boundary — where a convex
+    ceiling is always narrowest — plus a regular fan, because a non-convex one
+    need not be narrowest across any of its edges.
     """
     seen: dict[tuple[float, float], tuple[float, float]] = {}
     fan = [
-        (math.cos(math.radians(a)), math.sin(math.radians(a)))
-        for a in _frange(0.0, 180.0, _DIRECTION_STEP_DEG)
+        (math.cos(math.radians(angle)), math.sin(math.radians(angle)))
+        for angle in _degrees_around_a_half_turn()
     ]
-    for x0, y0, x1, y1 in segments:
+    for x0, y0, x1, y1, _ in boundary:
         length = math.hypot(x1 - x0, y1 - y0)
         fan.append(((y1 - y0) / length, (x0 - x1) / length))
     for dx, dy in fan:
         # A direction and its reverse are one bridge direction, so fold onto a
-        # half-turn before rounding to a key.
+        # half turn before rounding to a key.
         if dy < 0 or (dy == 0 and dx < 0):
             dx, dy = -dx, -dy
-        seen.setdefault((round(dx, 6), round(dy, 6)), (dx, dy))
+        seen.setdefault((round(dx, _DIRECTION_DIGITS), round(dy, _DIRECTION_DIGITS)), (dx, dy))
     return list(seen.values())
 
 
-def _frange(start: float, stop: float, step: float) -> list[float]:
-    return [start + step * i for i in range(math.ceil((stop - start) / step))]
+def _degrees_around_a_half_turn() -> list[float]:
+    steps = math.ceil(_HALF_TURN_DEG / _DIRECTION_STEP_DEG)
+    return [index * _DIRECTION_STEP_DEG for index in range(steps)]
 
 
-def _bridge_span(
-    face: Any, classifiers: list[BRepClass3d_SolidClassifier], max_bridge: float
-) -> float | None:
+def _span_floor(face: Any, box: Any) -> float:
+    """Shortest bridge line this ceiling can possibly hold, whichever way it runs.
+
+    A region only fits inside its own reach, so its area is at most its longest
+    line times that reach. Cheap enough to settle an obviously unbridgeable
+    ceiling before any anchor probe or chord scan — which is what keeps a lid
+    carrying a grid of bosses off a scan that is quadratic in boundary segments.
+    """
+    reach = math.hypot(box.size.X, box.size.Y)
+    return float(face.area / reach) if reach > 0 else 0.0
+
+
+def _bridge_span(face: Any, classifiers: list[BRepClass3d_SolidClassifier]) -> float | None:
     """The unsupported distance a bridge over this flat ceiling has to cross.
 
-    Returns ``None`` when no bridge direction works, so the ceiling needs support
-    however small it is — the underside of a floating or cantilevered mass, or a
-    slot open at one end.
+    Returns ``None`` when no direction works, so the ceiling needs support however
+    small it is — the underside of a floating or cantilevered mass, a slot open at
+    one end, or a roof whose supports leave a corner no straight line can reach.
 
     The slicer lays every bridge line over a ceiling in one direction, and each
-    line has to land on material at both ends. So the stretches of boundary that
-    carry no material below them — the *free* ones — decide the direction: bridge
-    lines must run parallel to all of them, or a line ends in mid-air. Anchored
-    all round, any direction works and the narrowest wins.
+    line has to land on material at both ends. So a direction is only usable if
+    every line it produces is held at both ends, and the span is the longest line
+    in the best such direction.
 
     Deliberately not a bounding-box dimension. A rectangular window through a thin
     wall has the wall thickness as its narrower side, but there is open air on both
@@ -312,41 +324,44 @@ def _bridge_span(
     width (issue #55). A bounding box also makes the answer depend on how the part
     happens to sit relative to the global axes, which it must not.
     """
-    box = face.bounding_box()
-    reach = math.hypot(box.size.X, box.size.Y)
-    if reach == 0:
+    boundary = _boundary(face, classifiers)
+    if len(boundary) < 3:
         return None
-    segments = _outline(face)
-    if len(segments) < 3:
-        return None
+    candidates = _candidate_directions(boundary)
+    runs = [_bridge_run(boundary, *d) for d in candidates]
+    usable = [run for run in runs if run is not None]
+    return min(usable) if usable else None
 
-    # A region of this area inside a reach this small holds a chord at least
-    # area/reach long whichever way it runs, so no direction can bridge it. Worth
-    # testing first: it costs nothing, and it keeps the quadratic chord sweep and
-    # every anchor probe off ceilings whose verdict is already settled.
-    if face.area / reach > max_bridge:
-        return min(_extent(segments, *d) for d in _directions(segments))
 
-    angles = _free_angles(face, classifiers)
-    if angles is None:
-        return None
-    if angles:
-        cone = _heading_cone(angles)
-        if cone is None:
-            return None
-        start, spread = cone
-        # Any direction across the fan is a candidate, so report the worst of them.
-        span = max(
-            _longest_chord(segments, math.cos(math.radians(a)), math.sin(math.radians(a)))
-            for a in (start, start + spread / 2, start + spread)
-        )
-    else:
-        ranked = sorted(_directions(segments), key=lambda d: _extent(segments, *d))
-        span = min(_longest_chord(segments, *d) for d in ranked[:_MAX_DIRECTIONS])
+def _candidate_directions(
+    boundary: list[tuple[float, float, float, float, bool]],
+) -> list[tuple[float, float]]:
+    """Directions a bridge could conceivably run, before checking where lines land.
 
-    # A chord of zero means the scan found no interior at all — a collapsed or
-    # self-crossing outline, not a ceiling that bridges for free.
-    return span if span > 0 else None
+    A line that crosses a stretch of boundary with nothing under it ends in
+    mid-air, and any stretch not running alongside the line gets crossed. So the
+    unanchored stretches, if there are any, leave exactly one direction to try —
+    and if they do not all run the same way, none at all. That is a necessary
+    condition rather than a sufficient one, which is why :func:`_bridge_run` still
+    checks each line: a roof whose sides converge passes this and still fails
+    there. It is worth doing first only because it is cheap, and it keeps the
+    scan, quadratic in boundary segments, off ceilings that cannot use it.
+    """
+    free = [segment for segment in boundary if not segment[4]]
+    if not free:
+        return _directions(boundary)
+    heading = _unit(free[0])
+    for segment in free[1:]:
+        other = _unit(segment)
+        if abs(heading[0] * other[1] - heading[1] * other[0]) > _ALONGSIDE_EPS:
+            return []
+    return [heading]
+
+
+def _unit(segment: tuple[float, float, float, float, bool]) -> tuple[float, float]:
+    x0, y0, x1, y1, _ = segment
+    length = math.hypot(x1 - x0, y1 - y0)
+    return (x1 - x0) / length, (y1 - y0) / length
 
 
 def find_overhangs(
@@ -387,7 +402,8 @@ def find_overhangs(
             continue
 
         # A downward face flush with the build plate is bed contact, not overhang.
-        on_bed = abs(face.bounding_box().min.Z - z_min) < bed_tol and nz < -_BED_NORMAL_TOL
+        box = face.bounding_box()
+        on_bed = abs(box.min.Z - z_min) < bed_tol and nz < -_BED_NORMAL_TOL
         if on_bed:
             continue
 
@@ -403,8 +419,9 @@ def find_overhangs(
 
         # A flat, wall-bounded ceiling short enough to bridge needs no support —
         # report it as an informational bridge, not an overhang warning.
-        if beta < _FLAT_TOL and classifiers:
-            span = _bridge_span(face, classifiers, max_bridge)
+        floor = _span_floor(face, box) if beta < _FLAT_TOL else 0.0
+        if beta < _FLAT_TOL and classifiers and floor <= max_bridge:
+            span = _bridge_span(face, classifiers)
             if span is not None and span <= max_bridge:
                 findings.append(
                     Finding(
@@ -422,6 +439,13 @@ def find_overhangs(
                 f"{flat} no bridge direction - needs support"
                 if span is None
                 else f"{flat} {span:.1f} mm span needs support"
+            )
+        elif beta < _FLAT_TOL and classifiers:
+            # Too big to bridge whichever way lines run, so the exact chord was
+            # never measured. Quote the bound that settled it, not a chord.
+            message = (
+                f"Flat {area:.1f} mm2 ceiling at {beta:.1f} deg,"
+                f" at least {floor:.1f} mm span needs support"
             )
         elif beta < _FLAT_TOL:
             # No solid to probe against, so whether it bridges cannot be told
