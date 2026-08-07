@@ -291,6 +291,32 @@ def test_filleted_roof_junction_still_anchors_a_bridge() -> None:
     assert bridge.severity is Severity.INFO
 
 
+def test_window_through_a_curved_wall_still_bridges() -> None:
+    # The window's two unanchored sides follow the wall, so they fan slightly
+    # rather than running exactly parallel and a line at the very edge of the
+    # ceiling does have one end unheld. That sliver is 0.01 mm here, against the
+    # 0.65 mm band left by a roof whose supports genuinely stop short — the two
+    # cases the tolerance has to separate, and this is the near side of it.
+    tube = Pos(0, 0, 20) * (Cylinder(radius=20, height=40) - Cylinder(radius=18, height=40))
+    # The slot cuts a window in each side of the tube.
+    bridges = analyze(cast(Shape[Any], tube - Pos(0, 0, 20) * Box(3, 60, 6))).bridges
+    assert len(bridges) == 2
+    assert all("3.0 mm span" in b.message for b in bridges)
+
+
+def test_ceiling_supported_only_along_a_comb_of_ribs_is_measured_between_them() -> None:
+    # A scan line here meets nine separate runs. An earlier cost shortcut argued
+    # from area over reach, which bounds the total of those runs rather than the
+    # longest one, and so claimed "at least 5.6 mm" for a ceiling that bridges at
+    # 4.2 mm — a false floor, and the wrong verdict with it.
+    block = Pos(0, 0, 10) * Box(40, 40, 20)
+    comb = Pos(0, -6, 4) * Box(20, 2, 8)
+    for index in range(9):
+        comb = comb + Pos(-9 + index * 2.25, 0, 4) * Box(1, 10, 8)
+    (bridge,) = analyze(cast(Shape[Any], block - comb)).bridges
+    assert "4.2 mm span" in bridge.message
+
+
 def test_roof_whose_supports_converge_is_not_a_bridge() -> None:
     # The two unsupported sides of this roof converge by 14 degrees, leaving a
     # corner no straight line reaches with both ends held. Judging a direction by
@@ -306,17 +332,16 @@ def test_roof_whose_supports_converge_is_not_a_bridge() -> None:
 
 
 def test_span_does_not_depend_on_the_threshold_it_is_compared_against() -> None:
-    # max_bridge decides the verdict, never the geometry. A ceiling settled by the
-    # cheap area/reach bound says so rather than passing that bound off as a
-    # measured span, which would move with the caller's threshold.
+    # max_bridge decides the verdict, never the geometry. An earlier cost shortcut
+    # published its own cut-off as the span, so the same ceiling measured 4.2 mm
+    # against one threshold and 16.3 mm against another.
     block = Pos(0, 0, 5) * Box(30, 30, 10)
     arms = Pos(0, -8.5, 4) * Box(20, 3, 8) + Pos(-8.5, 0, 4) * Box(3, 20, 8)
     part = cast(Shape[Any], block - arms)
     assert "4.2 mm span" in analyze(part).bridges[0].message
-    (measured,) = analyze(part, max_bridge=4.0).overhangs
-    assert "4.2 mm span" in measured.message
-    (bounded,) = analyze(part, max_bridge=3.0).overhangs
-    assert "at least" in bounded.message
+    for limit in (4.0, 3.0, 1.0):
+        (flagged,) = analyze(part, max_bridge=limit).overhangs
+        assert "4.2 mm span" in flagged.message
 
 
 def test_ceiling_far_too_large_to_bridge_is_settled_without_probing() -> None:

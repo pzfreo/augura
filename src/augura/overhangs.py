@@ -80,6 +80,29 @@ _DIRECTION_DIGITS = 6
 # fraction of that gap. Any point strictly inside gives the same crossings; this
 # sits hard against the ends, where the longest run is.
 _SCAN_INSET = 1e-9
+# Sine of the widest angle between a bridge line and an unanchored stretch that
+# could still leave only a sliver unheld. Purely a cost filter — anything it lets
+# through is measured properly by the scan, which is what decides.
+_GRAZING = 0.3
+# How wide a band of unheld ceiling, in mm, still counts as a sliver rather than
+# a corner needing support. The one tolerance here that is a physical judgement
+# rather than geometry or float noise: measured cases sit two orders of magnitude
+# either side of it — a window through a curved wall leaves 0.010 mm, a roof whose
+# supports stop short leaves 0.65 mm.
+_SLIVER_BAND = 0.1
+# Ceilings this detailed get described more coarsely for the chord scan, which is
+# quadratic in boundary segments and runs once per direction. A lid carrying a
+# grid of bosses is one face with a hundred-odd inner wires and would otherwise
+# take minutes. Anchor probing is unaffected — only how finely the outline is
+# drawn, and a coarser outline can only shorten a chord it measures.
+_SCAN_SEGMENTS = 200
+# Fewest points an edge keeps however tight the budget: a closed one still has to
+# come out as a polygon.
+_MIN_POLYGON = 3
+# Rough ceiling on scan work, in segment-crossing tests. Directions are dropped to
+# stay under it. The span is a minimum over the directions tried, so trying fewer
+# can only report a longer span, never a shorter one.
+_SCAN_WORK = 2_000_000
 # How far, relative to its own length, a boundary segment may stray across a scan
 # line and still count as running alongside it. A line running beside a segment
 # never lands on it, so such a segment terminates nothing. The bound is float
@@ -154,8 +177,10 @@ def _boundary(
     puts a shared height below the far end where open air reads as solid.
     """
     boundary: list[tuple[float, float, float, float, bool]] = []
-    for edge in face.edges():
-        count = _sample_count(edge)
+    edges = face.edges()
+    allowance = max(_MIN_POLYGON, _SCAN_SEGMENTS // max(1, len(edges)))
+    for edge in edges:
+        count = min(_sample_count(edge), allowance)
         sign = _outward_sign(edge, face)
         # Describing the curve and checking what holds it up want different
         # resolutions. Every probe costs a solid classification, so they follow
@@ -247,6 +272,7 @@ def _bridge_run(
     ]
     levels = sorted({v for _, v, _, _, _ in turned} | {v for _, _, _, v, _ in turned})
     longest = 0.0
+    loose = 0.0
     for lower, upper in zip(levels, levels[1:], strict=False):
         gap = upper - lower
         for scan in (lower + gap * _SCAN_INSET, upper - gap * _SCAN_INSET):
@@ -257,10 +283,15 @@ def _bridge_run(
                 and abs(v1 - v0) > _ALONGSIDE_EPS * math.hypot(u1 - u0, v1 - v0)
             )
             for entry, leave in zip(crossings[::2], crossings[1::2], strict=False):
-                if not (entry[1] and leave[1]):
-                    return None
-                longest = max(longest, leave[0] - entry[0])
-    return longest or None
+                if entry[1] and leave[1]:
+                    longest = max(longest, leave[0] - entry[0])
+                else:
+                    loose = max(loose, gap)
+    # Unanchored boundary that merely grazes the direction leaves a sliver of
+    # ceiling unheld — a window through a tapered or curved wall does this and
+    # bridges in practice. A roof whose supports genuinely stop short leaves a
+    # band orders of magnitude wider, which is what ``_SLIVER_BAND`` separates.
+    return None if loose > _SLIVER_BAND else (longest or None)
 
 
 def _directions(
@@ -294,18 +325,6 @@ def _degrees_around_a_half_turn() -> list[float]:
     return [index * _DIRECTION_STEP_DEG for index in range(steps)]
 
 
-def _span_floor(face: Any, box: Any) -> float:
-    """Shortest bridge line this ceiling can possibly hold, whichever way it runs.
-
-    A region only fits inside its own reach, so its area is at most its longest
-    line times that reach. Cheap enough to settle an obviously unbridgeable
-    ceiling before any anchor probe or chord scan — which is what keeps a lid
-    carrying a grid of bosses off a scan that is quadratic in boundary segments.
-    """
-    reach = math.hypot(box.size.X, box.size.Y)
-    return float(face.area / reach) if reach > 0 else 0.0
-
-
 def _bridge_span(face: Any, classifiers: list[BRepClass3d_SolidClassifier]) -> float | None:
     """The unsupported distance a bridge over this flat ceiling has to cross.
 
@@ -328,7 +347,8 @@ def _bridge_span(face: Any, classifiers: list[BRepClass3d_SolidClassifier]) -> f
     if len(boundary) < 3:
         return None
     candidates = _candidate_directions(boundary)
-    runs = [_bridge_run(boundary, *d) for d in candidates]
+    affordable = max(1, _SCAN_WORK // max(1, len(boundary) ** 2))
+    runs = [_bridge_run(boundary, *d) for d in candidates[:affordable]]
     usable = [run for run in runs if run is not None]
     return min(usable) if usable else None
 
@@ -348,14 +368,23 @@ def _candidate_directions(
     scan, quadratic in boundary segments, off ceilings that cannot use it.
     """
     free = [segment for segment in boundary if not segment[4]]
+    directions = _directions(boundary)
     if not free:
-        return _directions(boundary)
-    heading = _unit(free[0])
-    for segment in free[1:]:
-        other = _unit(segment)
-        if abs(heading[0] * other[1] - heading[1] * other[0]) > _ALONGSIDE_EPS:
-            return []
-    return [heading]
+        return directions
+    # Lines must run near enough alongside every unanchored stretch that what they
+    # leave unheld stays a sliver. How much is left is for the scan to measure;
+    # this only spares it the directions that obviously cannot work.
+    headings = [_unit(segment) for segment in free]
+    return [
+        direction
+        for direction in directions
+        if all(
+            abs(direction[0] * heading[1] - direction[1] * heading[0]) <= _GRAZING
+            for heading in headings
+        )
+    ] + [
+        h for h in headings[:1] if all(abs(h[0] * o[1] - h[1] * o[0]) <= _GRAZING for o in headings)
+    ]
 
 
 def _unit(segment: tuple[float, float, float, float, bool]) -> tuple[float, float]:
@@ -419,8 +448,7 @@ def find_overhangs(
 
         # A flat, wall-bounded ceiling short enough to bridge needs no support —
         # report it as an informational bridge, not an overhang warning.
-        floor = _span_floor(face, box) if beta < _FLAT_TOL else 0.0
-        if beta < _FLAT_TOL and classifiers and floor <= max_bridge:
+        if beta < _FLAT_TOL and classifiers:
             span = _bridge_span(face, classifiers)
             if span is not None and span <= max_bridge:
                 findings.append(
@@ -439,13 +467,6 @@ def find_overhangs(
                 f"{flat} no bridge direction - needs support"
                 if span is None
                 else f"{flat} {span:.1f} mm span needs support"
-            )
-        elif beta < _FLAT_TOL and classifiers:
-            # Too big to bridge whichever way lines run, so the exact chord was
-            # never measured. Quote the bound that settled it, not a chord.
-            message = (
-                f"Flat {area:.1f} mm2 ceiling at {beta:.1f} deg,"
-                f" at least {floor:.1f} mm span needs support"
             )
         elif beta < _FLAT_TOL:
             # No solid to probe against, so whether it bridges cannot be told
