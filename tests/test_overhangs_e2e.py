@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from build123d import Box, Pos, Shape
+from build123d import Box, Cylinder, Pos, Rot, Shape
 
 from augura import Severity, analyze, orientation_scores
 from tests.fixtures import CANTILEVER, FLAT_PLATE
@@ -105,6 +105,76 @@ def test_cantilever_arm_underside_is_too_wide_to_bridge() -> None:
     report = analyze(CANTILEVER.build())
     assert len(report.overhangs) == 1
     assert report.bridges == ()
+
+
+def _windowed_wall(window_width: float, wall_thickness: float = 2.0) -> Shape[Any]:
+    """A thin upright wall with a rectangular window cut clean through it. The
+    ceiling face is ``window_width x wall_thickness``, but the wall thickness is a
+    through-direction with open air on both sides, so it anchors nothing."""
+    wall = Pos(0, 0, 6) * Box(40, wall_thickness, 12)
+    window = Pos(0, 0, 6) * Box(window_width, wall_thickness + 4, 6)
+    return cast(Shape[Any], wall - window)
+
+
+def test_through_window_span_is_the_window_width_not_the_wall_thickness() -> None:
+    # Issue #55: the ceiling of a 20 mm window through a 2 mm wall is 20x2 mm, so
+    # the narrowest bounding-box side is the 2 mm wall thickness — but there is
+    # open air on both faces of the wall at that height, so nothing anchors a
+    # 2 mm bridge. The only anchors are the window ends, 20 mm apart.
+    report = analyze(_windowed_wall(20.0))
+    assert report.bridges == ()
+    (overhang,) = report.overhangs
+    assert "20.0 mm span" in overhang.message
+
+
+def test_through_window_narrow_enough_to_bridge_reports_the_true_span() -> None:
+    # The same geometry small enough to bridge must quote the window width (3 mm),
+    # not the wall thickness (2 mm) — the span is what makes the verdict credible.
+    (bridge,) = analyze(_windowed_wall(3.0)).bridges
+    assert bridge.severity is Severity.INFO
+    assert "3.0 mm span" in bridge.message
+
+
+def test_bridge_span_does_not_depend_on_rotation_about_the_print_axis() -> None:
+    # Spinning a part about Z changes nothing a printer cares about, so the span
+    # must not move. A bounding-box dimension does move: it read 2.0 mm upright
+    # and 15.6 mm at 45 deg for this part.
+    part = _windowed_wall(20.0)
+    upright = analyze(part).overhangs[0]
+    for angle in (30.0, 45.0, 90.0):
+        (turned,) = analyze(cast(Shape[Any], Rot(0, 0, angle) * part)).overhangs
+        assert turned.message == upright.message
+
+
+def test_slot_open_at_one_end_has_no_bridge_anchors() -> None:
+    # A through-window pushed to the wall's end is anchored on one side only, so
+    # every bridge line has one end in mid-air however short it is.
+    wall = Pos(0, 0, 6) * Box(40, 2, 12)
+    slot = Pos(15, 0, 6) * Box(14, 6, 6)
+    report = analyze(cast(Shape[Any], wall - slot))
+    assert report.bridges == ()
+    (overhang,) = report.overhangs
+    assert "no bridge anchors" in overhang.message
+
+
+def test_blind_hole_ceiling_spans_its_diameter() -> None:
+    # An all-curved anchored boundary: the flat ceiling of a blind drilled hole is
+    # a disc bounded by one circular edge, with no straight edge to measure across.
+    block = Pos(0, 0, 10) * Box(30, 30, 20)
+    hole = Pos(0, 0, 5) * Cylinder(radius=1.5, height=10)
+    (bridge,) = analyze(cast(Shape[Any], block - hole)).bridges
+    assert "3.0 mm span" in bridge.message
+
+
+def test_round_flange_underside_has_no_bridge_direction() -> None:
+    # A mushroom cap: the underside is an annulus anchored on the stem but free
+    # around its whole outer circle. Bridge lines would have to stay parallel to
+    # that circle, which no straight line can do, so it needs support.
+    stem = Pos(0, 0, 5) * Cylinder(radius=2, height=10)
+    cap = Pos(0, 0, 11) * Cylinder(radius=6, height=2)
+    report = analyze(cast(Shape[Any], stem + cap))
+    assert report.bridges == ()
+    assert any("no bridge anchors" in o.message for o in report.overhangs)
 
 
 def test_bridges_do_not_count_as_orientation_support_area() -> None:

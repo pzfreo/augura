@@ -3,6 +3,36 @@
 All notable changes to augura are documented here. Versions follow PEP 440;
 between releases `pyproject.toml` carries a `.devN` suffix.
 
+## 0.1.8
+
+- **Bridge span is the real unsupported distance, not a bounding-box side** (#55). The
+  `bridge`/`overhang` span used to be the smaller in-plane extent of the ceiling face,
+  which is only the bridging direction when the ceiling is anchored on that pair of
+  sides. A rectangular window through a thin wall is the counter-example: the ceiling is
+  `window_width x wall_thickness`, but the wall thickness has open air on both faces, so
+  a 20 x 2 mm window reported "2.0 mm span - bridges, no support needed" when the bridge
+  really has to cross 20 mm — the difference between a non-event and a real decision in
+  a floppy material. The span is now derived from which of the ceiling's boundary edges
+  have material below them to land on: bridge lines must run parallel to every
+  *unanchored* edge, so those edges pick the direction and the ceiling is measured along
+  it; with every edge anchored, any direction works and the narrowest wins. Three
+  consequences: spans on through-features grow (some ceilings correctly stop being
+  bridges), the answer no longer changes when the part is rotated about the print axis
+  (the same part read 2.0 mm upright and 15.6 mm at 45 deg), and ceilings with no
+  workable bridge direction now say `no bridge anchors - needs support` rather than
+  quoting a span they cannot achieve.
+- **Anchor detection is local rather than whole-face** (#55). The old wall-bounded check
+  asked whether a neighbouring face's *bounding box* reached below the ceiling plane,
+  which is true for the outer skin of a wall a through-window is cut into even though
+  there is nothing under that edge, and false for a genuine anchor whose face is
+  classified oddly. It now probes for material just beyond the edge and just below the
+  plane, per solid so touching solids in an unfused compound are not missed (the same
+  `Compound.is_inside` trap `wall_thickness` sidesteps). On the bundled Framework card
+  fixture two pocket ceilings that were warned about as "1.3 mm span needs support" are
+  now correctly `2.0 mm span - bridges`, measured across the axis that has anchors.
+  Despite the extra queries `analyze()` got slightly faster on both real-world
+  fixtures, since the classifier is now built once per part instead of per query.
+
 ## 0.1.7
 
 - **Constrain away from the broken `cadquery-ocp-novtk 7.9.3.1.1` wheel** (#53). build123d
