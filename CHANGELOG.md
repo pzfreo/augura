@@ -12,26 +12,38 @@ between releases `pyproject.toml` carries a `.devN` suffix.
   `window_width x wall_thickness`, but the wall thickness has open air on both faces, so
   a 20 x 2 mm window reported "2.0 mm span - bridges, no support needed" when the bridge
   really has to cross 20 mm — the difference between a non-event and a real decision in
-  a floppy material. The span is now derived from which of the ceiling's boundary edges
-  have material below them to land on: bridge lines must run parallel to every
-  *unanchored* edge, so those edges pick the direction and the ceiling is measured along
-  it; with every edge anchored, any direction works and the narrowest wins. Three
-  consequences: spans on through-features grow (some ceilings correctly stop being
-  bridges), the answer no longer changes when the part is rotated about the print axis
-  (the same part read 2.0 mm upright and 15.6 mm at 45 deg), and ceilings with no
-  workable bridge direction now say `no bridge anchors - needs support` rather than
-  quoting a span they cannot achieve.
-- **Anchor detection is local rather than whole-face** (#55). The old wall-bounded check
-  asked whether a neighbouring face's *bounding box* reached below the ceiling plane,
-  which is true for the outer skin of a wall a through-window is cut into even though
-  there is nothing under that edge, and false for a genuine anchor whose face is
-  classified oddly. It now probes for material just beyond the edge and just below the
-  plane, per solid so touching solids in an unfused compound are not missed (the same
-  `Compound.is_inside` trap `wall_thickness` sidesteps). On the bundled Framework card
-  fixture two pocket ceilings that were warned about as "1.3 mm span needs support" are
-  now correctly `2.0 mm span - bridges`, measured across the axis that has anchors.
-  Despite the extra queries `analyze()` got slightly faster on both real-world
-  fixtures, since the classifier is now built once per part instead of per query.
+  a floppy material. The span now comes from what actually supports the ceiling. Each
+  stretch of its boundary is probed for material below; bridge lines must run parallel to
+  every *unanchored* stretch or land in mid-air, so those stretches pick the direction,
+  and the ceiling is measured along it. Anchored the whole way round, any direction works
+  and the narrowest wins. Consequences: spans on through-features grow (some ceilings
+  correctly stop being bridges), the answer no longer depends on how the part sits
+  relative to the global axes (the same part read 2.0 mm upright and 15.6 mm at 45 deg),
+  and a ceiling with no workable direction now says `no bridge direction - needs support`
+  instead of quoting a span it cannot achieve.
+- **The span is a chord, not an extent** (#55). What is measured is the longest line in
+  the chosen direction that stays inside the ceiling, found by scanning the boundary. An
+  L-shaped cavity with 3 mm arms used to be measured end to end at 20 mm; no bridge line
+  crosses more than one arm, so it is 4.2 mm across the diagonal and bridges. A ceiling
+  with an island of material in it (an inner wire) is now measured to the island rather
+  than across it.
+- **Anchor detection is local, and reads geometry rather than curve type** (#55). The old
+  wall-bounded check asked whether a neighbouring face's *bounding box* reached below the
+  ceiling plane — true for the outer skin of a wall a through-window is cut into even
+  though nothing is under that edge. Boundaries are now walked at roughly 1 mm and probed
+  for material just beyond and just below, per solid so touching solids in an unfused
+  compound are not missed (the same `Compound.is_inside` trap `wall_thickness` sidesteps).
+  Two things follow: a ceiling carried only on scattered pads is no longer mistaken for a
+  bridge, and nothing keys off `GeomType`, so a spline that runs dead straight — which
+  imported STEP is full of — behaves exactly like a line instead of being written off as
+  uncurved. Ceilings bounded only by curves are handled directly rather than falling back
+  to a bounding box, so a 20 x 4 mm elliptical pocket reads 4 mm at any rotation.
+- Known limits: boundaries are sampled, so support gaps much finer than a millimetre can
+  be stepped over, and a tightly curved boundary is measured on its inscribed polyline —
+  a 0.1 mm-wide annular slot reads 2.7 mm against a true 2.8 mm. Spans over strongly
+  non-convex ceilings are exact only for the directions tried (every 5 degrees, plus one
+  across each stretch of boundary); untried directions can only make the reported span
+  larger, never smaller.
 
 ## 0.1.7
 

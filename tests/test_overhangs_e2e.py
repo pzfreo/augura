@@ -9,7 +9,20 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from build123d import Box, Cylinder, Pos, Rot, Shape
+from build123d import (
+    Box,
+    Circle,
+    Cylinder,
+    Edge,
+    Ellipse,
+    Face,
+    Pos,
+    Rot,
+    Shape,
+    Solid,
+    Wire,
+    extrude,
+)
 
 from augura import Severity, analyze, orientation_scores
 from tests.fixtures import CANTILEVER, FLAT_PLATE
@@ -154,7 +167,7 @@ def test_slot_open_at_one_end_has_no_bridge_anchors() -> None:
     report = analyze(cast(Shape[Any], wall - slot))
     assert report.bridges == ()
     (overhang,) = report.overhangs
-    assert "no bridge anchors" in overhang.message
+    assert "no bridge direction" in overhang.message
 
 
 def test_blind_hole_ceiling_spans_its_diameter() -> None:
@@ -174,7 +187,80 @@ def test_round_flange_underside_has_no_bridge_direction() -> None:
     cap = Pos(0, 0, 11) * Cylinder(radius=6, height=2)
     report = analyze(cast(Shape[Any], stem + cap))
     assert report.bridges == ()
-    assert any("no bridge anchors" in o.message for o in report.overhangs)
+    assert any("no bridge direction" in o.message for o in report.overhangs)
+
+
+def test_span_ignores_how_a_straight_edge_is_stored() -> None:
+    # A BREP edge can be a spline whose points happen to be collinear, which
+    # imported STEP is full of. Judging curvature by curve type would call this
+    # window unbridgeable; the span is 3 mm either way.
+    half_width, half_depth = 1.5, 5.0
+    outline = [
+        Edge.make_spline(
+            [(-half_width, -half_depth, 0), (0, -half_depth, 0), (half_width, -half_depth, 0)]
+        ),
+        Edge.make_line((half_width, -half_depth, 0), (half_width, half_depth, 0)),
+        Edge.make_spline(
+            [(half_width, half_depth, 0), (0, half_depth, 0), (-half_width, half_depth, 0)]
+        ),
+        Edge.make_line((-half_width, half_depth, 0), (-half_width, -half_depth, 0)),
+    ]
+    window = Pos(0, 0, 3) * Solid.extrude(Face(Wire(outline)), (0, 0, 6))
+    (bridge,) = analyze(cast(Shape[Any], Pos(0, 0, 6) * Box(40, 10, 12) - window)).bridges
+    assert "3.0 mm span" in bridge.message
+
+
+def _elliptical_pocket(angle: float) -> Shape[Any]:
+    """A blind pocket with a 20x4 mm elliptical ceiling, turned in plan."""
+    block = Pos(0, 0, 10) * Box(40, 40, 20)
+    pocket = Pos(0, 0, 5) * Rot(0, 0, angle) * extrude(Ellipse(10, 2), 10)
+    return cast(Shape[Any], block - pocket)
+
+
+def test_all_curved_ceiling_span_survives_rotation() -> None:
+    # A ceiling bounded only by curves has no straight edge to measure across, and
+    # falling back to the bounding box would read 4 mm upright and 14.4 mm at
+    # 45 deg. The pocket is 4 mm across whichever way the part is turned.
+    for angle in (0.0, 30.0, 45.0, 90.0):
+        (bridge,) = analyze(_elliptical_pocket(angle)).bridges
+        assert "4.0 mm span" in bridge.message
+
+
+def test_ceiling_with_an_inner_wire_spans_to_the_island_not_across_it() -> None:
+    # A thin annular cavity around a central column of material. The column
+    # anchors the inside of the ceiling, so bridge lines cross the 2.8 mm gap —
+    # they never span the 20 mm outer diameter.
+    block = Pos(0, 0, 10) * Box(40, 40, 20)
+    cavity = Pos(0, 0, 5) * (extrude(Circle(10), 10) - extrude(Circle(9.9), 10))
+    (bridge,) = analyze(cast(Shape[Any], block - cavity)).bridges
+    assert bridge.severity is Severity.INFO
+
+
+def test_non_convex_ceiling_is_measured_across_an_arm_not_end_to_end() -> None:
+    # An L-shaped cavity with 3 mm arms. Its extent is 20 mm each way and 16.3 mm
+    # diagonally, but no single bridge line ever crosses more than one arm, so the
+    # best direction is the diagonal at about 4.2 mm.
+    block = Pos(0, 0, 5) * Box(30, 30, 10)
+    arms = Pos(0, -8.5, 4) * Box(20, 3, 8) + Pos(-8.5, 0, 4) * Box(3, 20, 8)
+    (bridge,) = analyze(cast(Shape[Any], block - arms)).bridges
+    assert "4.2 mm span" in bridge.message
+
+
+def test_ceiling_supported_only_in_patches_still_needs_support() -> None:
+    # A roof carried on scattered tabs. Sampling its edges at a few points would
+    # find material at each and call the whole 20x4 mm underside a 4 mm bridge,
+    # but most bridge lines have nothing to land on.
+    roof = Pos(0, 0, 5.5) * Box(20, 4, 1)
+    part = roof
+    for x in (-5.0, 0.0, 5.0):
+        part = part + Pos(x, -2.5, 2.75) * Box(0.8, 1, 5.5)
+        part = part + Pos(x, 2.5, 2.75) * Box(0.8, 1, 5.5)
+    for y in (-1.0, 0.0, 1.0):
+        part = part + Pos(-10.5, y, 2.75) * Box(1, 0.8, 5.5)
+        part = part + Pos(10.5, y, 2.75) * Box(1, 0.8, 5.5)
+    report = analyze(cast(Shape[Any], part))
+    assert report.bridges == ()
+    assert any("no bridge direction" in o.message for o in report.overhangs)
 
 
 def test_bridges_do_not_count_as_orientation_support_area() -> None:
