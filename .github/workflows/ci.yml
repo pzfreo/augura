@@ -47,9 +47,13 @@ jobs:
       # rather than via the universal lock: 0.10 pulls cadquery-ocp +
       # cadquery-vtk (cp313 wheels), 0.11 pulls cadquery-ocp-novtk (no vtk).
       # The universal lock can't span both OCP backends across 3.11-3.14.
+      # build123d 0.10 leaves ocp-gordon and ocpsvg uncapped, so their OCP 8 releases
+      # (which import OCP.collections) resolve and break `import build123d`; pin them back.
       - name: Install (pinned build123d)
         run: |
           uv venv --python ${{ matrix.python-version }}
-          uv pip install "build123d==${{ matrix.build123d }}" pytest "pytest-cov>=7.1.0" .
+          extra=""
+          if [ "${{ matrix.build123d }}" = "0.10.0" ]; then extra="ocp-gordon<0.3 ocpsvg<0.7"; fi
+          uv pip install "build123d==${{ matrix.build123d }}" $extra pytest "pytest-cov>=7.1.0" .
       - name: pytest (with coverage gate)
         run: uv run --no-sync pytest
