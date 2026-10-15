@@ -82,7 +82,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "build123d", specifier = ">=0.10,<0.12" },
+    { name = "build123d", specifier = ">=0.10,<0.14" },
     { name = "trimesh" },
 ]
 

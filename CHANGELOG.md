@@ -3,6 +3,13 @@
 All notable changes to augura are documented here. Versions follow PEP 440;
 between releases `pyproject.toml` carries a `.devN` suffix.
 
+## 0.1.8
+
+- **Support build123d 0.12 and 0.13** (`build123d>=0.10,<0.14`). build123d 0.13 runs on OCP 8
+  (cadquery-ocp-novtk 8.0); augura's own code needed no change, and CI now also tests 0.13 on
+  Python 3.12 and 3.14. Needed so build123d-mcp can support the latest build123d
+  (pzfreo/build123d-mcp#488).
+
 ## 0.1.7
 
 - **Constrain away from the broken `cadquery-ocp-novtk 7.9.3.1.1` wheel** (#53). build123d

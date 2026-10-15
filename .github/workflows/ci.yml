@@ -33,6 +33,11 @@ jobs:
         include:
           - python-version: "3.14"
             build123d: "0.11.0"
+          # 0.13 runs on OCP 8 (cadquery-ocp-novtk 8.0).
+          - python-version: "3.12"
+            build123d: "0.13.0"
+          - python-version: "3.14"
+            build123d: "0.13.0"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
