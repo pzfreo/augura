@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from build123d import Box, Cone, Cylinder, Shell, Solid, Sphere
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
-from OCP.TopoDS import TopoDS
 
 from augura import Severity, analyze, find_manifold_issues, is_watertight
 from tests.fixtures import SOLID_CUBE
@@ -48,7 +47,7 @@ def test_open_solid_is_flagged_not_watertight() -> None:
     open_shell = Shell(Box(20, 20, 20).faces()[:-1])
     # OCCT happily builds a Solid around an open shell without validating
     # closure — exactly what a malformed STEP import yields.
-    bad_solid = Solid(BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(open_shell.wrapped)).Solid())
+    bad_solid = Solid(BRepBuilderAPI_MakeSolid(open_shell.wrapped).Solid())
 
     assert is_watertight(bad_solid) is False
     issues = find_manifold_issues(bad_solid)
