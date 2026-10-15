@@ -6,9 +6,11 @@ between releases `pyproject.toml` carries a `.devN` suffix.
 ## 0.1.8
 
 - **Support build123d 0.12 and 0.13** (`build123d>=0.10,<0.14`). build123d 0.13 runs on OCP 8
-  (cadquery-ocp-novtk 8.0); augura's own code needed no change, and CI now also tests 0.13 on
-  Python 3.12 and 3.14. Needed so build123d-mcp can support the latest build123d
-  (pzfreo/build123d-mcp#488).
+  (cadquery-ocp-novtk 8.0); augura's own code needed no change, and CI now also tests 0.12 on
+  Python 3.12 and 0.13 on Python 3.12 and 3.14. Needed so build123d-mcp can support the latest
+  build123d (pzfreo/build123d-mcp#488).
+- **Staying on build123d 0.10?** Also pin `ocp-gordon<0.3`. build123d 0.10 leaves it uncapped,
+  and ocp-gordon 0.3 needs OCP 8, so a fresh install otherwise fails at `import build123d`.
 
 ## 0.1.7
 
